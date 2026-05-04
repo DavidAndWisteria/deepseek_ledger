@@ -1,151 +1,269 @@
 import pytest
 from app import db
-from app.models import User, Record
+from app.models import (
+    User, Family, Owner, Account, Category, Transaction,
+    AccountType, CategoryType, UserRole, DepositStatus
+)
 from datetime import datetime, timezone
 
 
 class TestUserModel:
     """用户模型测试"""
 
-    def test_create_user(self, app):
+    def test_create_user(self, app, test_family):
         with app.app_context():
-            user = User(username='newuser')
+            user = User(username='newuser', role=UserRole.ADULT, family_id=test_family)
             user.set_password('mypassword')
             db.session.add(user)
             db.session.commit()
             assert user.id is not None
             assert user.username == 'newuser'
             assert user.password_hash != 'mypassword'
-            assert user.created_at is not None
+            assert user.role == UserRole.ADULT
+            assert user.is_adult() is True
 
-    def test_password_hashing(self, app):
+    def test_child_user(self, app, test_family):
         with app.app_context():
-            user = User(username='testhash')
-            user.set_password('correct_password')
-            assert user.password_hash != 'correct_password'
-            assert len(user.password_hash) > 20
+            user = User(username='child', role=UserRole.CHILD, family_id=test_family)
+            user.set_password('password')
+            db.session.add(user)
+            db.session.commit()
+            assert user.is_adult() is False
+            assert user.can_view_family_data() is False
 
-    def test_password_verification_correct(self, app):
+    def test_password_verification(self, app, test_family):
         with app.app_context():
-            user = User(username='testverify')
-            user.set_password('correct_password')
-            assert user.check_password('correct_password') is True
+            user = User(username='testpwd', role=UserRole.ADULT, family_id=test_family)
+            user.set_password('correct')
+            assert user.check_password('correct') is True
+            assert user.check_password('wrong') is False
 
-    def test_password_verification_wrong(self, app):
+    def test_unique_username(self, app, test_family):
         with app.app_context():
-            user = User(username='testwrong')
-            user.set_password('correct_password')
-            assert user.check_password('wrong_password') is False
-
-    def test_password_verification_empty(self, app):
-        with app.app_context():
-            user = User(username='testempty')
-            user.set_password('somepassword')
-            assert user.check_password('') is False
-
-    def test_unique_username(self, app):
-        with app.app_context():
-            user1 = User(username='duplicate')
-            user1.set_password('password1')
+            user1 = User(username='unique_test', role=UserRole.ADULT, family_id=test_family)
+            user1.set_password('pwd')
             db.session.add(user1)
             db.session.commit()
-            user2 = User(username='duplicate')
-            user2.set_password('password2')
+            
+            user2 = User(username='unique_test', role=UserRole.CHILD, family_id=test_family)
+            user2.set_password('pwd')
             db.session.add(user2)
             with pytest.raises(Exception):
                 db.session.commit()
             db.session.rollback()
 
 
-class TestRecordModel:
-    """记录模型测试"""
+class TestFamilyModel:
+    """家庭模型测试"""
 
-    def test_create_expense_record(self, app, test_user):
+    def test_create_family(self, app):
         with app.app_context():
-            user = db.session.get(User, test_user)
-            record = Record(
-                user_id=user.id,
-                amount=100.50,
-                category='餐饮',
-                description='午餐',
-                record_type='expense'
-            )
-            db.session.add(record)
+            family = Family(family_name='新家庭')
+            db.session.add(family)
             db.session.commit()
-            assert record.id is not None
-            assert record.amount == 100.50
-            assert record.category == '餐饮'
-            assert record.description == '午餐'
-            assert record.record_type == 'expense'
-            assert record.date is not None
+            assert family.family_id is not None
+            assert family.family_name == '新家庭'
+            assert family.created_at is not None
 
-    def test_create_income_record(self, app, test_user):
+    def test_family_members_relationship(self, app):
         with app.app_context():
-            user = db.session.get(User, test_user)
-            record = Record(
-                user_id=user.id,
-                amount=5000.00,
-                category='工资',
-                description='月薪',
-                record_type='income'
-            )
-            db.session.add(record)
+            family = Family(family_name='关系测试')
+            db.session.add(family)
+            db.session.flush()
+            
+            user = User(username='member1', role=UserRole.ADULT, family_id=family.family_id)
+            user.set_password('pwd')
+            db.session.add(user)
             db.session.commit()
-            assert record.record_type == 'income'
-            assert record.amount == 5000.00
+            
+            assert user.family.family_name == '关系测试'
 
-    def test_record_user_relationship(self, app, test_user):
-        with app.app_context():
-            user = db.session.get(User, test_user)
-            record = Record(
-                user_id=user.id,
-                amount=50.00,
-                category='交通',
-                record_type='expense'
-            )
-            db.session.add(record)
-            db.session.commit()
-            assert record.user_id == user.id
-            assert record.user.username == 'testuser'
 
-    def test_record_without_description(self, app, test_user):
-        with app.app_context():
-            user = db.session.get(User, test_user)
-            record = Record(
-                user_id=user.id,
-                amount=30.00,
-                category='其他',
-                record_type='expense'
-            )
-            db.session.add(record)
-            db.session.commit()
-            assert record.description is None
+class TestOwnerModel:
+    """所有者模型测试"""
 
-    def test_record_amount_decimal(self, app, test_user):
+    def test_create_owner(self, app, test_family, test_user):
         with app.app_context():
-            user = db.session.get(User, test_user)
-            record = Record(
-                user_id=user.id,
-                amount=99.99,
-                category='测试',
-                record_type='expense'
-            )
-            db.session.add(record)
+            owner = Owner(owner_name='新成员', family_id=test_family, user_id=test_user)
+            db.session.add(owner)
             db.session.commit()
-            assert record.amount == 99.99
+            assert owner.owner_id is not None
+            assert owner.owner_name == '新成员'
+            assert owner.user.username == 'testuser'
 
-    def test_record_date_auto_set(self, app, test_user):
+
+class TestAccountModel:
+    """账户模型测试"""
+
+    def test_create_account(self, app, test_owner):
         with app.app_context():
-            user = db.session.get(User, test_user)
-            before = datetime.now(timezone.utc)
-            record = Record(
-                user_id=user.id,
-                amount=10.00,
-                category='测试',
-                record_type='expense'
+            account = Account(
+                account_name='现金钱包',
+                account_type=AccountType.CASH,
+                account_custodian='支付宝',
+                account_currency_name='CNY',
+                account_owner_id=test_owner
             )
-            db.session.add(record)
+            db.session.add(account)
             db.session.commit()
-            after = datetime.now(timezone.utc)
-            assert record.date.replace(tzinfo=timezone.utc) >= before
-            assert record.date.replace(tzinfo=timezone.utc) <= after
+            assert account.account_id is not None
+            assert account.account_name == '现金钱包'
+            assert account.account_type == AccountType.CASH
+            assert account.account_currency_name == 'CNY'
+
+    def test_account_close_date(self, app, test_owner):
+        with app.app_context():
+            from datetime import date
+            account = Account(
+                account_name='已关闭账户',
+                account_type=AccountType.SAVING,
+                account_custodian='某银行',
+                account_owner_id=test_owner,
+                account_close_date=date(2025, 12, 31)
+            )
+            db.session.add(account)
+            db.session.commit()
+            assert account.account_close_date == date(2025, 12, 31)
+
+
+class TestCategoryModel:
+    """分类模型测试"""
+
+    def test_create_category(self, app):
+        with app.app_context():
+            category = Category(
+                category_name='工资',
+                category_class='职业收入',
+                category_subclass='主业',
+                category_type=CategoryType.INCOME
+            )
+            db.session.add(category)
+            db.session.commit()
+            assert category.category_id is not None
+            assert category.category_type == CategoryType.INCOME
+            assert category.category_type.value == 'I'
+
+    def test_category_with_alias(self, app):
+        with app.app_context():
+            category = Category(
+                category_name='餐饮',
+                category_other_name='吃饭',
+                category_class='日常生活',
+                category_subclass='饮食',
+                category_type=CategoryType.EXPENSE
+            )
+            db.session.add(category)
+            db.session.commit()
+            assert category.category_other_name == '吃饭'
+
+    def test_category_types(self, app):
+        with app.app_context():
+            types = [
+                ('收入类', CategoryType.INCOME, 'I'),
+                ('支出类', CategoryType.EXPENSE, 'E'),
+                ('转账类', CategoryType.TRANSFER, 'T'),
+                ('特殊类', CategoryType.SPECIAL, 'S'),
+            ]
+            for name, enum_type, expected_value in types:
+                category = Category(
+                    category_name=name,
+                    category_class='测试',
+                    category_subclass='',
+                    category_type=enum_type
+                )
+                assert category.category_type.value == expected_value
+
+
+class TestTransactionModel:
+    """交易模型测试"""
+
+    def test_create_income(self, app, test_owner, test_account, test_category):
+        with app.app_context():
+            transaction = Transaction(
+                trans_datetime=datetime.now(timezone.utc),
+                trans_desc='工资',
+                trans_amount=5000.00,
+                trans_account_id=test_account,
+                trans_category_id=test_category,
+                trans_owner_id=test_owner
+            )
+            db.session.add(transaction)
+            db.session.commit()
+            assert transaction.trans_id is not None
+            assert transaction.is_income() is True
+            assert transaction.is_expense() is False
+            assert transaction.is_transfer() is False
+
+    def test_create_expense(self, app, test_owner, test_account, test_category):
+        with app.app_context():
+            transaction = Transaction(
+                trans_datetime=datetime.now(timezone.utc),
+                trans_desc='午餐',
+                trans_amount=-100.00,
+                trans_account_id=test_account,
+                trans_category_id=test_category,
+                trans_owner_id=test_owner
+            )
+            db.session.add(transaction)
+            db.session.commit()
+            assert transaction.is_expense() is True
+            assert transaction.is_income() is False
+
+    def test_create_transfer(self, app, test_owner, test_account, test_category):
+        with app.app_context():
+            # 创建第二个账户
+            account2 = Account(
+                account_name='信用卡',
+                account_type=AccountType.CREDIT_CARD,
+                account_custodian='某银行',
+                account_owner_id=test_owner
+            )
+            db.session.add(account2)
+            db.session.flush()
+            
+            # 转出
+            trans_out = Transaction(
+                trans_datetime=datetime.now(timezone.utc),
+                trans_desc='还款转出',
+                trans_amount=-1000.00,
+                trans_account_id=test_account,
+                trans_category_id=test_category,
+                trans_owner_id=test_owner
+            )
+            db.session.add(trans_out)
+            db.session.flush()
+            
+            # 转入
+            trans_in = Transaction(
+                trans_datetime=datetime.now(timezone.utc),
+                trans_desc='还款转入',
+                trans_amount=1000.00,
+                trans_account_id=account2.account_id,
+                trans_category_id=test_category,
+                trans_owner_id=test_owner,
+                trans_counter_id=trans_out.trans_id
+            )
+            db.session.add(trans_in)
+            db.session.flush()
+            
+            trans_out.trans_counter_id = trans_in.trans_id
+            db.session.commit()
+            
+            assert trans_out.is_transfer() is True
+            assert trans_in.is_transfer() is True
+            assert trans_out.counter_transaction.trans_id == trans_in.trans_id
+            assert trans_in.counter_transaction.trans_id == trans_out.trans_id
+
+    def test_transaction_currency(self, app, test_owner, test_account, test_category):
+        with app.app_context():
+            transaction = Transaction(
+                trans_datetime=datetime.now(timezone.utc),
+                trans_amount=100.00,
+                trans_currency_name='USD',
+                trans_account_id=test_account,
+                trans_category_id=test_category,
+                trans_owner_id=test_owner
+            )
+            db.session.add(transaction)
+            db.session.commit()
+            assert transaction.trans_currency_name == 'USD'

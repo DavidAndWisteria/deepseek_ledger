@@ -45,7 +45,10 @@ def add_category():
 @categories.route('/categories/<int:category_id>/edit', methods=['POST'])
 @login_required
 def edit_category(category_id):
-    category = Category.query.get_or_404(category_id)
+    category = db.session.get(Category, category_id)
+    if not category:
+        flash('分类不存在')
+        return redirect(url_for('categories.list_categories'))
     
     category.category_name = request.form.get('category_name', category.category_name).strip()
     category.category_other_name = request.form.get('category_other_name', '').strip() or None
@@ -61,7 +64,10 @@ def edit_category(category_id):
 @categories.route('/categories/<int:category_id>/delete', methods=['POST'])
 @login_required
 def delete_category(category_id):
-    category = Category.query.get_or_404(category_id)
+    category = db.session.get(Category, category_id)
+    if not category:
+        flash('分类不存在')
+        return redirect(url_for('categories.list_categories'))
     db.session.delete(category)
     db.session.commit()
     flash('分类已删除')

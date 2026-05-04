@@ -66,8 +66,7 @@ def add_account():
     if not owner_id or not current_user.is_adult():
         owner_id = owner.owner_id
     else:
-        # 验证选择的拥有者属于同一家庭
-        target_owner = Owner.query.get(owner_id)
+        target_owner = db.session.get(Owner, owner_id)
         if not target_owner or target_owner.family_id != owner.family_id:
             owner_id = owner.owner_id
     
@@ -112,7 +111,10 @@ def add_account():
 @login_required
 def edit_account(account_id):
     owner = get_user_owner()
-    account = Account.query.get_or_404(account_id)
+    account = db.session.get(Account, account_id)
+    if not account:
+        flash('账户不存在')
+        return redirect(url_for('accounts.list_accounts'))
     
     # 权限检查：本人或成人可编辑
     if account.account_owner_id != owner.owner_id and not current_user.is_adult():
@@ -144,7 +146,7 @@ def edit_account(account_id):
     if current_user.is_adult():
         new_owner_id = request.form.get('account_owner_id', type=int)
         if new_owner_id:
-            target_owner = Owner.query.get(new_owner_id)
+            target_owner = db.session.get(Owner, new_owner_id)
             if target_owner and target_owner.family_id == owner.family_id:
                 account.account_owner_id = new_owner_id
     
@@ -157,7 +159,10 @@ def edit_account(account_id):
 @login_required
 def delete_account(account_id):
     owner = get_user_owner()
-    account = Account.query.get_or_404(account_id)
+    account = db.session.get(Account, account_id)
+    if not account:
+        flash('账户不存在')
+        return redirect(url_for('accounts.list_accounts'))
     
     if account.account_owner_id != owner.owner_id and not current_user.is_adult():
         flash('无权删除此账户')

@@ -1,14 +1,38 @@
 import os
+import shutil
 import tempfile
 import pytest
 from app import create_app, db
-from app.models import User, Record
+from app.models import (
+    User, Family, Owner, Account, Category, Transaction,
+    AccountType, CategoryType, UserRole
+)
+from datetime import datetime, timezone
+
+
+# 开发数据库路径
+DEV_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance', 'ledger.db')
+BACKUP_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance', 'ledger.db.backup')
+
+
+def pytest_configure(config):
+    """pytest 启动时备份开发数据库"""
+    if os.path.exists(DEV_DB_PATH):
+        shutil.copy2(DEV_DB_PATH, BACKUP_DB_PATH)
+
+
+def pytest_unconfigure(config):
+    """pytest 结束时恢复开发数据库"""
+    if os.path.exists(BACKUP_DB_PATH):
+        shutil.copy2(BACKUP_DB_PATH, DEV_DB_PATH)
+        os.unlink(BACKUP_DB_PATH)
 
 
 @pytest.fixture
 def app():
-    """创建测试用的Flask应用"""
-    db_fd, db_path = tempfile.mkstemp()
+    """创建测试Flask应用，使用临时数据库"""
+    db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    os.close(db_fd)
     
     app = create_app()
     app.config.update({
@@ -26,37 +50,40 @@ def app():
     
     with app.app_context():
         db.drop_all()
-    os.close(db_fd)
-    os.unlink(db_path)
+    
+    try:
+        os.unlink(db_path)
+    except PermissionError:
+        pass
 
 
 @pytest.fixture
 def client(app):
-    """创建测试客户端"""
     return app.test_client()
 
 
 @pytest.fixture
-def runner(app):
-    """创建测试命令行运行器"""
-    return app.test_cli_runner()
-
-
-@pytest.fixture
 def test_user(app):
-    """创建测试用户，返回用户ID避免 DetachedInstanceError"""
     with app.app_context():
-        user = User(username='testuser')
+        family = Family(family_name='测试家庭')
+        db.session.add(family)
+        db.session.flush()
+        
+        user = User(username='testuser', role=UserRole.ADULT, family_id=family.family_id)
         user.set_password('password123')
         db.session.add(user)
+        db.session.flush()
+        
+        owner = Owner(owner_name='测试用户', family_id=family.family_id, user_id=user.id)
+        db.session.add(owner)
         db.session.commit()
-        # 返回 user_id 而不是 user 对象
+        
         return user.id
 
 
 @pytest.fixture
-def logged_in_client(client, app, test_user):
-    """创建已登录的测试客户端"""
+def logged_in_client(app, test_user):
+    client = app.test_client()
     with app.app_context():
         user = db.session.get(User, test_user)
         client.post('/login', data={
@@ -67,41 +94,59 @@ def logged_in_client(client, app, test_user):
 
 
 @pytest.fixture
-def sample_records(app, test_user):
-    """创建示例记录，返回记录ID列表"""
+def test_owner(app, test_user):
     with app.app_context():
-        records = [
-            Record(
-                user_id=test_user,
-                amount=100.00,
-                category='餐饮',
-                description='午餐',
-                record_type='expense'
-            ),
-            Record(
-                user_id=test_user,
-                amount=50.00,
-                category='交通',
-                description='地铁',
-                record_type='expense'
-            ),
-            Record(
-                user_id=test_user,
-                amount=5000.00,
-                category='工资',
-                description='月薪',
-                record_type='income'
-            ),
-            Record(
-                user_id=test_user,
-                amount=200.00,
-                category='购物',
-                description='日用品',
-                record_type='expense'
-            ),
-        ]
-        for record in records:
-            db.session.add(record)
+        user = db.session.get(User, test_user)
+        return user.owner.owner_id
+
+
+@pytest.fixture
+def test_family(app, test_user):
+    with app.app_context():
+        user = db.session.get(User, test_user)
+        return user.family_id
+
+
+@pytest.fixture
+def test_account(app, test_owner):
+    with app.app_context():
+        account = Account(
+            account_name='测试储蓄卡',
+            account_type=AccountType.SAVING,
+            account_custodian='测试银行',
+            account_currency_name='HKD',
+            account_owner_id=test_owner
+        )
+        db.session.add(account)
         db.session.commit()
-        # 返回记录ID列表
-        return [r.id for r in records]
+        return account.account_id
+
+
+@pytest.fixture
+def test_category(app):
+    with app.app_context():
+        category = Category(
+            category_name='餐饮',
+            category_class='日常生活',
+            category_subclass='饮食',
+            category_type=CategoryType.EXPENSE
+        )
+        db.session.add(category)
+        db.session.commit()
+        return category.category_id
+
+
+@pytest.fixture
+def test_transaction(app, test_owner, test_account, test_category):
+    with app.app_context():
+        transaction = Transaction(
+            trans_datetime=datetime.now(timezone.utc),
+            trans_desc='测试午餐',
+            trans_amount=-100.00,
+            trans_account_id=test_account,
+            trans_category_id=test_category,
+            trans_owner_id=test_owner
+        )
+        db.session.add(transaction)
+        db.session.commit()
+        return transaction.trans_id

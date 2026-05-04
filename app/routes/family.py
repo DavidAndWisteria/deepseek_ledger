@@ -26,7 +26,7 @@ def manage_family():
         flash('仅成人可以管理家庭成员')
         return redirect(url_for('transactions.dashboard'))
     
-    family_obj = Family.query.get(owner.family_id)
+    family_obj = db.session.get(Family, owner.family_id)
     if not family_obj:
         flash('未找到家庭信息')
         return redirect(url_for('transactions.dashboard'))
@@ -110,7 +110,11 @@ def edit_member(owner_id):
         flash('仅成人可以编辑家庭成员')
         return redirect(url_for('family.manage_family'))
     
-    target_owner = Owner.query.get_or_404(owner_id)
+    target_owner = db.session.get(Owner, owner_id)
+    if not target_owner:
+        flash('成员不存在')
+        return redirect(url_for('family.manage_family'))
+    
     current_owner = get_user_owner()
     
     # 验证是否同一家庭
@@ -145,7 +149,11 @@ def delete_member(owner_id):
         flash('仅成人可以删除家庭成员')
         return redirect(url_for('family.manage_family'))
     
-    target_owner = Owner.query.get_or_404(owner_id)
+    target_owner = db.session.get(Owner, owner_id)
+    if not target_owner:
+        flash('成员不存在')
+        return redirect(url_for('family.manage_family'))
+    
     current_owner = get_user_owner()
     
     # 验证是否同一家庭
@@ -161,7 +169,7 @@ def delete_member(owner_id):
     # 检查是否还有其他成人
     if target_owner.user and target_owner.user.is_adult():
         adult_count = User.query.filter_by(
-            family_id=current_owner.family_id, 
+            family_id=current_owner.family_id,
             role=UserRole.ADULT
         ).count()
         if adult_count <= 1:
@@ -188,7 +196,11 @@ def reset_member_password(owner_id):
         flash('仅成人可以重置密码')
         return redirect(url_for('family.manage_family'))
     
-    target_owner = Owner.query.get_or_404(owner_id)
+    target_owner = db.session.get(Owner, owner_id)
+    if not target_owner:
+        flash('成员不存在')
+        return redirect(url_for('family.manage_family'))
+    
     current_owner = get_user_owner()
     
     if target_owner.family_id != current_owner.family_id:

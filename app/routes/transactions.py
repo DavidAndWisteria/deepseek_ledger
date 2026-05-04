@@ -1,8 +1,8 @@
 from datetime import datetime, timezone, timedelta
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app import db
-from app.models import Transaction, Account, Category, Owner, CategoryType
+from app.models import Transaction, Account, Category, Owner
 
 transactions = Blueprint('transactions', __name__)
 
@@ -18,7 +18,7 @@ def get_visible_transactions_query(start_date=None, end_date=None):
     """获取当前用户可见的交易查询"""
     owner = get_user_owner()
     if not owner:
-        return Transaction.query.filter(False)  # 返回空查询
+        return Transaction.query.filter(False)
     
     query = Transaction.query
     
@@ -116,8 +116,8 @@ def add_transaction():
     except ValueError:
         trans_datetime = datetime.now(timezone.utc)
     
-    category = Category.query.get(category_id)
-    account = Account.query.get(account_id)
+    category = db.session.get(Category, category_id)
+    account = db.session.get(Account, account_id)
     
     if not category or not account:
         flash('无效的分类或账户')
@@ -190,10 +190,11 @@ def add_transaction():
 @transactions.route('/delete/<int:trans_id>', methods=['POST'])
 @login_required
 def delete_transaction(trans_id):
-    """删除交易"""
-    transaction = Transaction.query.get_or_404(trans_id)
+    transaction = db.session.get(Transaction, trans_id)
+    if not transaction:
+        flash('交易不存在')
+        return redirect(url_for('transactions.dashboard'))
     
-    # 权限检查
     owner = get_user_owner()
     if not owner or transaction.trans_owner_id != owner.owner_id:
         flash('无权删除此交易')
@@ -201,7 +202,7 @@ def delete_transaction(trans_id):
     
     # 如果是转账，同时删除配对记录
     if transaction.trans_counter_id:
-        counter = Transaction.query.get(transaction.trans_counter_id)
+        counter = db.session.get(Transaction, transaction.trans_counter_id)
         if counter:
             db.session.delete(counter)
     
