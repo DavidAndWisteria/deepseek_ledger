@@ -1,0 +1,18 @@
+-r requirements.txt
+
+# 测试
+pytest==7.4.0
+pytest-cov==4.1.0
+pytest-flask==1.2.0
+
+# 代码质量
+flake8==6.1.0
+black==23.7.0
+pylint==2.17.5
+bandit==1.7.5
+
+# 安全
+safety==2.3.5
+
+# 文档
+mkdocs==1.5.2
