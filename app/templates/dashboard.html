@@ -1,131 +1,233 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1 style="margin-bottom: 24px; color: #2c3e50;">📊 财务仪表盘</h1>
+<h1 style="margin-bottom: 24px; color: #1a1a2e;">📊 财务仪表盘</h1>
 
 <!-- 统计卡片 -->
-<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
-    <div class="card" style="text-align: center;">
-        <div style="font-size: 14px; color: #888; margin-bottom: 8px;">💰 总收入</div>
-        <div style="font-size: 28px; font-weight: bold; color: #27ae60;">
-            ¥{{ "%.2f"|format(income) }}
-        </div>
+<div class="summary-cards">
+    <div class="summary-card">
+        <div class="label">📥 总收入</div>
+        <div class="value text-income">${{ "%.2f"|format(total_income) }}</div>
     </div>
-    
-    <div class="card" style="text-align: center;">
-        <div style="font-size: 14px; color: #888; margin-bottom: 8px;">💸 总支出</div>
-        <div style="font-size: 28px; font-weight: bold; color: #e74c3c;">
-            ¥{{ "%.2f"|format(expense) }}
-        </div>
+    <div class="summary-card">
+        <div class="label">📤 总支出</div>
+        <div class="value text-expense">${{ "%.2f"|format(total_expense) }}</div>
     </div>
-    
-    <div class="card" style="text-align: center;">
-        <div style="font-size: 14px; color: #888; margin-bottom: 8px;">📈 结余</div>
-        <div style="font-size: 28px; font-weight: bold; color: {{ '#' + ('27ae60' if balance >= 0 else 'e74c3c') }};">
-            ¥{{ "%.2f"|format(balance) }}
+    <div class="summary-card">
+        <div class="label">🔀 转账</div>
+        <div class="value text-transfer">${{ "%.2f"|format(total_transfer) }}</div>
+    </div>
+    <div class="summary-card">
+        <div class="label">💰 净收入</div>
+        <div class="value" style="color: {{ '#27ae60' if balance >= 0 else '#e74c3c' }};">
+            ${{ "%.2f"|format(balance) }}
         </div>
     </div>
 </div>
 
-<!-- 添加记录表单 -->
+<!-- 日期筛选 -->
 <div class="card">
-    <h3 style="margin-bottom: 16px; color: #2c3e50;">➕ 添加记录</h3>
-    
-    <form method="POST" action="{{ url_for('records.add_record') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-            <div class="form-group">
-                <label for="record_type">类型</label>
-                <select id="record_type" name="record_type" required>
-                    <option value="expense">📤 支出</option>
-                    <option value="income">📥 收入</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="amount">金额 (¥)</label>
-                <input type="number" id="amount" name="amount" 
-                       step="0.01" min="0.01" max="99999999.99" 
-                       placeholder="0.00" required>
-            </div>
+    <form method="GET" action="{{ url_for('transactions.dashboard') }}" style="display: flex; gap: 16px; align-items: end;">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>开始日期</label>
+            <input type="date" name="start_date" value="{{ start_date }}">
         </div>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-            <div class="form-group">
-                <label for="category">分类</label>
-                <input type="text" id="category" name="category" 
-                       placeholder="例如：餐饮、交通、工资" 
-                       maxlength="50" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="description">备注（可选）</label>
-                <input type="text" id="description" name="description" 
-                       placeholder="添加备注说明" 
-                       maxlength="200">
-            </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>结束日期</label>
+            <input type="date" name="end_date" value="{{ end_date }}">
         </div>
-        
-        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;">
-            ✓ 添加记录
-        </button>
+        <button type="submit" class="btn btn-secondary" style="height: 40px;">🔍 筛选</button>
     </form>
 </div>
 
-<!-- 记录列表 -->
-<div class="card">
-    <h3 style="margin-bottom: 16px; color: #2c3e50;">📋 最近记录</h3>
-    
-    {% if records %}
-    <div style="overflow-x: auto;">
-        <table>
-            <thead>
-                <tr>
-                    <th>日期</th>
-                    <th>类型</th>
-                    <th>分类</th>
-                    <th>金额</th>
-                    <th>备注</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for record in records %}
-                <tr>
-                    <td>{{ record.date.strftime('%Y-%m-%d') }}</td>
-                    <td>
-                        {% if record.record_type == 'income' %}
-                            <span class="text-income">📥 收入</span>
-                        {% else %}
-                            <span class="text-expense">📤 支出</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ record.category }}</td>
-                    <td>
-                        <span class="{{ 'text-income' if record.record_type == 'income' else 'text-expense' }}">
-                            ¥{{ "%.2f"|format(record.amount) }}
-                        </span>
-                    </td>
-                    <td>{{ record.description if record.description else '-' }}</td>
-                    <td>
-                        <form method="POST" action="{{ url_for('records.delete_record', record_id=record.id) }}" 
-                              style="display: inline;"
-                              onsubmit="return confirm('确定要删除这条记录吗？此操作不可恢复。');">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-danger btn-sm">🗑 删除</button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% else %}
-    <div style="text-align: center; padding: 40px; color: #999;">
-        <p style="font-size: 48px; margin-bottom: 16px;">📭</p>
-        <p>暂无记录，开始添加你的第一笔收支吧！</p>
-    </div>
-    {% endif %}
+<!-- 标签页：添加交易 / 交易列表 -->
+<div class="tabs">
+    <div class="tab active" data-tab="add-tab" onclick="switchTab('add-tab')">➕ 添加交易</div>
+    <div class="tab" data-tab="list-tab" onclick="switchTab('list-tab')">📋 交易列表</div>
 </div>
+
+<!-- 添加交易表单 -->
+<div id="add-tab" class="tab-content active">
+    <div class="card">
+        <form method="POST" action="{{ url_for('transactions.add_transaction') }}" id="transaction-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            
+            <div class="form-row-3">
+                <div class="form-group">
+                    <label for="trans_type">交易类型 *</label>
+                    <select id="trans_type" name="trans_type" required onchange="onTypeChange()">
+                        <option value="expense">📤 支出</option>
+                        <option value="income">📥 收入</option>
+                        <option value="transfer">🔀 转账</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="account_id">账户 *</label>
+                    <select id="account_id" name="account_id" required>
+                        <option value="">选择账户</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.account_id }}">
+                            {{ account.account_name }} ({{ account.account_currency_name }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group" id="to-account-group" style="display: none;">
+                    <label for="to_account_id">转入账户 *</label>
+                    <select id="to_account_id" name="to_account_id">
+                        <option value="">选择账户</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.account_id }}">
+                            {{ account.account_name }} ({{ account.account_currency_name }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-row-3">
+                <div class="form-group">
+                    <label for="amount">金额 *</label>
+                    <input type="number" id="amount" name="amount" step="0.01" min="0.01" placeholder="0.00" required>
+                </div>
+                <div class="form-group">
+                    <label for="category_id">分类 *</label>
+                    <select id="category_id" name="category_id" required>
+                        <option value="">选择分类</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.category_id }}" data-type="{{ cat.category_type.value }}">
+                            {{ cat.category_name }} ({{ cat.category_class }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="trans_date">日期</label>
+                    <input type="date" id="trans_date" name="trans_date" 
+                           value="{{ start_date }}">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="description">备注</label>
+                <input type="text" id="description" name="description" 
+                       placeholder="可选备注" maxlength="500">
+            </div>
+            
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">
+                ✓ 添加交易
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- 交易列表 -->
+<div id="list-tab" class="tab-content">
+    <div class="card">
+        {% if transactions %}
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>类型</th>
+                        <th>账户</th>
+                        <th>分类</th>
+                        <th>金额</th>
+                        <th>备注</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in transactions %}
+                    <tr>
+                        <td>{{ t.trans_datetime.strftime('%Y-%m-%d') }}</td>
+                        <td>
+                            {% if t.is_income() %}
+                                <span class="badge badge-income">收入</span>
+                            {% elif t.is_expense() %}
+                                <span class="badge badge-expense">支出</span>
+                            {% else %}
+                                <span class="badge badge-transfer">转账</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ t.account_rel.account_name }}</td>
+                        <td>{{ t.category_rel.category_name }}</td>
+                        <td>
+                            <span class="{{ 'text-income' if t.trans_amount > 0 else 'text-expense' }}">
+                                ${{ "%.2f"|format(t.trans_amount) }}
+                            </span>
+                        </td>
+                        <td>{{ t.trans_desc or '-' }}</td>
+                        <td>
+                            <form method="POST" action="{{ url_for('transactions.delete_transaction', trans_id=t.trans_id) }}" 
+                                  style="display: inline;"
+                                  onsubmit="return confirm('删除此交易将同时删除关联的转账记录，确定继续？');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-danger btn-sm">🗑 删除</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 40px; color: #999;">
+            <p style="font-size: 48px; margin-bottom: 16px;">📭</p>
+            <p>暂无交易记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    function onTypeChange() {
+        const transType = document.getElementById('trans_type').value;
+        const toAccountGroup = document.getElementById('to-account-group');
+        const toAccountSelect = document.getElementById('to_account_id');
+        const categorySelect = document.getElementById('category_id');
+        
+        if (transType === 'transfer') {
+            toAccountGroup.style.display = 'block';
+            toAccountSelect.required = true;
+            // 筛选转账分类
+            filterCategories('T');
+        } else if (transType === 'income') {
+            toAccountGroup.style.display = 'none';
+            toAccountSelect.required = false;
+            filterCategories('I');
+        } else {
+            toAccountGroup.style.display = 'none';
+            toAccountSelect.required = false;
+            filterCategories('E');
+        }
+    }
+    
+    function filterCategories(type) {
+        const options = document.getElementById('category_id').options;
+        for (let i = 0; i < options.length; i++) {
+            const dataType = options[i].getAttribute('data-type');
+            if (!dataType || dataType === type || dataType === 'S') {
+                options[i].style.display = '';
+            } else {
+                options[i].style.display = 'none';
+            }
+        }
+        // 重置选择
+        document.getElementById('category_id').value = '';
+    }
+    
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        onTypeChange();
+    });
+    
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector(`.tab[data-tab="${tabName}"]`).classList.add('active');
+        document.getElementById(tabName).classList.add('active');
+    }
+</script>
 {% endblock %}

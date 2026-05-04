@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div style="max-width: 400px; margin: 60px auto;">
+<div class="auth-container">
     <div class="card">
-        <h2 style="text-align: center; margin-bottom: 24px; color: #2c3e50;">🔐 用户登录</h2>
+        <h2 style="text-align: center; margin-bottom: 24px; color: #1a1a2e;">🔐 用户登录</h2>
         
         <form method="POST" action="{{ url_for('auth.login') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -20,13 +20,13 @@
                        placeholder="请输入密码" required autocomplete="current-password">
             </div>
             
-            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;">
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px; padding: 12px;">
                 登 录
             </button>
         </form>
         
-        <div class="auth-link">
-            还没有账户？<a href="{{ url_for('auth.register') }}">立即注册</a>
+        <div style="text-align: center; margin-top: 16px; font-size: 14px; color: #888;">
+            还没有账户？<a href="{{ url_for('auth.register') }}" style="color: #e94560;">立即注册</a>
         </div>
     </div>
 </div>

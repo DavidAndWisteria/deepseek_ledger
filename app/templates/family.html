@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 style="margin-bottom: 24px; color: #1a1a2e;">👨‍👩‍👧‍👦 家庭管理</h1>
+
+<!-- 家庭信息 -->
+<div class="card" style="background: linear-gradient(135deg, #1a1a2e, #16213e); color: white;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h2 style="margin-bottom: 8px;">🏠 {{ family.family_name }}</h2>
+            <p style="color: #aaa; font-size: 14px;">
+                创建于 {{ family.created_at.strftime('%Y-%m-%d') }} · 
+                {{ members|length }} 名成员 · 
+                {{ users|selectattr('is_adult')|list|length }} 名成人
+            </p>
+        </div>
+        <div style="font-size: 48px;">👨‍👩‍👧‍👦</div>
+    </div>
+</div>
+
+<!-- 家庭成员列表 -->
+<div class="card">
+    <h3>👥 家庭成员</h3>
+    
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>成员名称</th>
+                    <th>用户名</th>
+                    <th>角色</th>
+                    <th>加入时间</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for member in members %}
+                <tr>
+                    <td>
+                        <strong>{{ member.owner_name }}</strong>
+                        {% if member.owner_id == current_user.owner.owner_id %}
+                            <span class="badge" style="background: #e94560; color: white;">我</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if member.user %}
+                            {{ member.user.username }}
+                        {% else %}
+                            <span style="color: #aaa;">未关联账户</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if member.user and member.user.is_adult() %}
+                            <span class="badge" style="background: #d5f5e3; color: #27ae60;">👨‍💼 成人</span>
+                        {% elif member.user %}
+                            <span class="badge" style="background: #d4e6f1; color: #2980b9;">👶 小孩</span>
+                        {% else %}
+                            <span class="badge" style="background: #eee; color: #888;">无角色</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if member.user %}
+                            {{ member.user.created_at.strftime('%Y-%m-%d') }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if member.user %}
+                            <span style="color: #27ae60;">● 活跃</span>
+                        {% else %}
+                            <span style="color: #aaa;">● 未激活</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if member.owner_id != current_user.owner.owner_id %}
+                            <button onclick="openEditModal({{ member.owner_id }}, '{{ member.owner_name }}', '{{ member.user.role.value if member.user else 'CHILD' }}')" 
+                                    class="btn btn-secondary btn-sm">✏️ 编辑</button>
+                            <button onclick="openResetPasswordModal({{ member.owner_id }}, '{{ member.owner_name }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    {% if not member.user %}disabled style="opacity: 0.5;"{% endif %}>
+                                🔑 重置密码
+                            </button>
+                            <form method="POST" action="{{ url_for('family.delete_member', owner_id=member.owner_id) }}" 
+                                  style="display: inline;"
+                                  onsubmit="return confirm('确定要删除成员 {{ member.owner_name }} 吗？其关联的用户账户也将被删除。此操作不可恢复！');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-danger btn-sm">🗑 删除</button>
+                            </form>
+                        {% else %}
+                            <span style="color: #aaa; font-size: 12px;">当前用户</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 添加新成员 -->
+<div class="card">
+    <h3>➕ 添加新成员</h3>
+    <form method="POST" action="{{ url_for('family.add_member') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="owner_name">成员名称 *</label>
+                <input type="text" id="owner_name" name="owner_name" 
+                       placeholder="例如：妈妈、爸爸、小明" required>
+            </div>
+            <div class="form-group">
+                <label for="role">角色 *</label>
+                <select id="role" name="role" required>
+                    <option value="ADULT">👨‍💼 成人（可查看全家数据）</option>
+                    <option value="CHILD">👶 小孩（仅查看自己数据）</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="username">登录用户名 *</label>
+                <input type="text" id="username" name="username" 
+                       placeholder="字母数字下划线，至少3个字符" 
+                       required pattern="[a-zA-Z0-9_]{3,80}">
+            </div>
+            <div class="form-group">
+                <label for="password">登录密码 *</label>
+                <input type="password" id="password" name="password" 
+                       placeholder="至少8个字符" required minlength="8">
+            </div>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">✓ 添加成员</button>
+    </form>
+</div>
+
+<!-- 权限说明 -->
+<div class="card" style="background: #f8f9fa;">
+    <h3>📖 权限说明</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
+        <div style="padding: 16px; background: white; border-radius: 8px;">
+            <h4 style="color: #27ae60; margin-bottom: 8px;">👨‍💼 成人权限</h4>
+            <ul style="font-size: 13px; color: #666; line-height: 1.8; padding-left: 20px;">
+                <li>查看家庭所有交易记录</li>
+                <li>查看所有账户和余额</li>
+                <li>添加/编辑/删除家庭成员</li>
+                <li>管理分类和账户</li>
+                <li>重置其他成员密码</li>
+            </ul>
+        </div>
+        <div style="padding: 16px; background: white; border-radius: 8px;">
+            <h4 style="color: #2980b9; margin-bottom: 8px;">👶 小孩权限</h4>
+            <ul style="font-size: 13px; color: #666; line-height: 1.8; padding-left: 20px;">
+                <li>仅查看自己的交易记录</li>
+                <li>仅查看自己的账户</li>
+                <li>添加自己的交易记录</li>
+                <li>不能管理家庭成员</li>
+                <li>不能修改其他成员信息</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑成员弹窗 -->
+<div id="edit-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div class="card" style="max-width: 500px; width: 90%;">
+        <h3>✏️ 编辑成员信息</h3>
+        <form id="edit-form" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label>成员名称</label>
+                <input type="text" id="edit-owner-name" name="owner_name" required>
+            </div>
+            <div class="form-group">
+                <label>角色</label>
+                <select id="edit-role" name="role" required>
+                    <option value="ADULT">👨‍💼 成人</option>
+                    <option value="CHILD">👶 小孩</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 12px;">
+                <button type="submit" class="btn btn-primary">💾 保存</button>
+                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 重置密码弹窗 -->
+<div id="reset-password-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div class="card" style="max-width: 500px; width: 90%;">
+        <h3>🔑 重置密码</h3>
+        <p style="color: #888; margin-bottom: 16px;">正在为 <strong id="reset-member-name"></strong> 重置密码</p>
+        <form id="reset-password-form" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label>新密码</label>
+                <input type="password" name="new_password" placeholder="至少8个字符" required minlength="8">
+            </div>
+            <div style="display: flex; gap: 12px;">
+                <button type="submit" class="btn btn-primary">🔑 重置密码</button>
+                <button type="button" class="btn btn-secondary" onclick="closeResetPasswordModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openEditModal(ownerId, ownerName, role) {
+        document.getElementById('edit-form').action = '/family/edit-member/' + ownerId;
+        document.getElementById('edit-owner-name').value = ownerName;
+        document.getElementById('edit-role').value = role;
+        document.getElementById('edit-modal').style.display = 'flex';
+    }
+    
+    function closeEditModal() {
+        document.getElementById('edit-modal').style.display = 'none';
+    }
+    
+    function openResetPasswordModal(ownerId, ownerName) {
+        document.getElementById('reset-password-form').action = '/family/reset-password/' + ownerId;
+        document.getElementById('reset-member-name').textContent = ownerName;
+        document.getElementById('reset-password-modal').style.display = 'flex';
+    }
+    
+    function closeResetPasswordModal() {
+        document.getElementById('reset-password-modal').style.display = 'none';
+    }
+    
+    // 点击弹窗外部关闭
+    window.onclick = function(event) {
+        if (event.target == document.getElementById('edit-modal')) {
+            closeEditModal();
+        }
+        if (event.target == document.getElementById('reset-password-modal')) {
+            closeResetPasswordModal();
+        }
+    }
+</script>
+{% endblock %}

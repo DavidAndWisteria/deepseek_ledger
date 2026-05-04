@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 style="margin-bottom: 24px; color: #1a1a2e;">📂 分类管理</h1>
+
+<!-- 添加分类 -->
+<div class="card">
+    <h3>➕ 添加新分类</h3>
+    <form method="POST" action="{{ url_for('categories.add_category') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="category_name">分类名称 *</label>
+                <input type="text" id="category_name" name="category_name" 
+                       placeholder="例如：餐饮、工资" required>
+            </div>
+            <div class="form-group">
+                <label for="category_type">分类类型 *</label>
+                <select id="category_type" name="category_type" required>
+                    <option value="I">I - 收入</option>
+                    <option value="E">E - 支出</option>
+                    <option value="T">T - 转账</option>
+                    <option value="S">S - 特殊</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="category_class">大类 *</label>
+                <input type="text" id="category_class" name="category_class" 
+                       placeholder="例如：日常生活、职业收入" required>
+            </div>
+            <div class="form-group">
+                <label for="category_subclass">子类</label>
+                <input type="text" id="category_subclass" name="category_subclass" 
+                       placeholder="例如：饮食、交通">
+            </div>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">✓ 添加分类</button>
+    </form>
+</div>
+
+<!-- 分类列表 -->
+<div class="card">
+    <h3>📋 分类列表 ({{ categories|length }})</h3>
+    
+    {% if categories %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>类型</th>
+                    <th>大类</th>
+                    <th>子类</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cat in categories %}
+                <tr>
+                    <td><strong>{{ cat.category_name }}</strong></td>
+                    <td>
+                        {% if cat.category_type.value == 'I' %}
+                            <span class="badge badge-income">收入</span>
+                        {% elif cat.category_type.value == 'E' %}
+                            <span class="badge badge-expense">支出</span>
+                        {% elif cat.category_type.value == 'T' %}
+                            <span class="badge badge-transfer">转账</span>
+                        {% else %}
+                            <span class="badge" style="background: #eee;">特殊</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ cat.category_class }}</td>
+                    <td>{{ cat.category_subclass or '-' }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('categories.delete_category', category_id=cat.category_id) }}" 
+                              style="display: inline;"
+                              onsubmit="return confirm('确定删除此分类？');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-danger btn-sm">🗑 删除</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 40px; color: #999;">
+        <p>暂无分类</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
