@@ -9,24 +9,16 @@
     <form method="POST" action="{{ url_for('categories.add_category') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         
-        <div class="form-row">
+        <div class="form-row-3">
             <div class="form-group">
-                <label for="category_name">分类名称 *</label>
-                <input type="text" id="category_name" name="category_name" 
-                       placeholder="例如：餐饮、工资" required>
-            </div>
-            <div class="form-group">
-                <label for="category_type">分类类型 *</label>
+                <label for="category_type">类型 *</label>
                 <select id="category_type" name="category_type" required>
                     <option value="I">I - 收入</option>
-                    <option value="E">E - 支出</option>
+                    <option value="E" selected>E - 支出</option>
                     <option value="T">T - 转账</option>
                     <option value="S">S - 特殊</option>
                 </select>
             </div>
-        </div>
-        
-        <div class="form-row">
             <div class="form-group">
                 <label for="category_class">大类 *</label>
                 <input type="text" id="category_class" name="category_class" 
@@ -36,6 +28,19 @@
                 <label for="category_subclass">子类</label>
                 <input type="text" id="category_subclass" name="category_subclass" 
                        placeholder="例如：饮食、交通">
+            </div>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="category_name">分类名称 *</label>
+                <input type="text" id="category_name" name="category_name" 
+                       placeholder="例如：餐饮、工资" required>
+            </div>
+            <div class="form-group">
+                <label for="category_other_name">别名</label>
+                <input type="text" id="category_other_name" name="category_other_name" 
+                       placeholder="可选别名">
             </div>
         </div>
         
@@ -52,17 +57,17 @@
         <table>
             <thead>
                 <tr>
-                    <th>名称</th>
                     <th>类型</th>
                     <th>大类</th>
                     <th>子类</th>
+                    <th>名称</th>
+                    <th>别名</th>
                     <th>操作</th>
                 </tr>
             </thead>
             <tbody>
                 {% for cat in categories %}
                 <tr>
-                    <td><strong>{{ cat.category_name }}</strong></td>
                     <td>
                         {% if cat.category_type.value == 'I' %}
                             <span class="badge badge-income">收入</span>
@@ -71,12 +76,22 @@
                         {% elif cat.category_type.value == 'T' %}
                             <span class="badge badge-transfer">转账</span>
                         {% else %}
-                            <span class="badge" style="background: #eee;">特殊</span>
+                            <span class="badge" style="background: #eee; color: #888;">特殊</span>
                         {% endif %}
                     </td>
                     <td>{{ cat.category_class }}</td>
                     <td>{{ cat.category_subclass or '-' }}</td>
+                    <td><strong>{{ cat.category_name }}</strong></td>
+                    <td>{{ cat.category_other_name or '-' }}</td>
                     <td>
+                        <button onclick="openEditModal(this)" 
+                                data-id="{{ cat.category_id }}"
+                                data-type="{{ cat.category_type.value }}"
+                                data-class="{{ cat.category_class }}"
+                                data-subclass="{{ cat.category_subclass or '' }}"
+                                data-name="{{ cat.category_name }}"
+                                data-other="{{ cat.category_other_name or '' }}"
+                                class="btn btn-secondary btn-sm">✏️ 编辑</button>
                         <form method="POST" action="{{ url_for('categories.delete_category', category_id=cat.category_id) }}" 
                               style="display: inline;"
                               onsubmit="return confirm('确定删除此分类？');">
@@ -91,8 +106,78 @@
     </div>
     {% else %}
     <div style="text-align: center; padding: 40px; color: #999;">
-        <p>暂无分类</p>
+        <p style="font-size: 48px;">📂</p>
+        <p>暂无分类，请添加你的第一个分类</p>
     </div>
     {% endif %}
 </div>
+
+<!-- 编辑分类弹窗 -->
+<div id="edit-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div class="card" style="max-width: 550px; width: 90%;">
+        <h3>✏️ 编辑分类</h3>
+        <form id="edit-form" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            
+            <div class="form-row-3">
+                <div class="form-group">
+                    <label>类型</label>
+                    <select id="edit-type" name="category_type" required>
+                        <option value="I">I - 收入</option>
+                        <option value="E">E - 支出</option>
+                        <option value="T">T - 转账</option>
+                        <option value="S">S - 特殊</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>大类</label>
+                    <input type="text" id="edit-class" name="category_class" required>
+                </div>
+                <div class="form-group">
+                    <label>子类</label>
+                    <input type="text" id="edit-subclass" name="category_subclass">
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>名称</label>
+                    <input type="text" id="edit-name" name="category_name" required>
+                </div>
+                <div class="form-group">
+                    <label>别名</label>
+                    <input type="text" id="edit-other" name="category_other_name">
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button type="submit" class="btn btn-primary">💾 保存</button>
+                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openEditModal(btn) {
+        const id = btn.dataset.id;
+        document.getElementById('edit-form').action = '/categories/' + id + '/edit';
+        document.getElementById('edit-type').value = btn.dataset.type;
+        document.getElementById('edit-class').value = btn.dataset.class;
+        document.getElementById('edit-subclass').value = btn.dataset.subclass;
+        document.getElementById('edit-name').value = btn.dataset.name;
+        document.getElementById('edit-other').value = btn.dataset.other;
+        document.getElementById('edit-modal').style.display = 'flex';
+    }
+    
+    function closeEditModal() {
+        document.getElementById('edit-modal').style.display = 'none';
+    }
+    
+    window.onclick = function(event) {
+        if (event.target == document.getElementById('edit-modal')) {
+            closeEditModal();
+        }
+    }
+</script>
 {% endblock %}

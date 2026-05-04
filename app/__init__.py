@@ -1,4 +1,5 @@
 import os
+import datetime as dt
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
@@ -30,6 +31,11 @@ def create_app():
     login_manager.login_view = 'auth.login'
     login_manager.login_message = '请先登录以访问此页面。'
 
+    # 模板全局变量
+    @app.context_processor
+    def utility_processor():
+        return {'today_date': lambda: dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d')}
+
     # 注册蓝图
     from app.routes.auth import auth as auth_blueprint
     app.register_blueprint(auth_blueprint)
@@ -42,7 +48,7 @@ def create_app():
 
     from app.routes.categories import categories as categories_blueprint
     app.register_blueprint(categories_blueprint)
-    
+
     from app.routes.family import family as family_blueprint
     app.register_blueprint(family_blueprint)
 
@@ -50,50 +56,5 @@ def create_app():
     with app.app_context():
         from app import models
         db.create_all()
-        
-        # 初始化默认分类
-        _init_default_categories()
 
     return app
-
-
-def _init_default_categories():
-    """初始化默认分类"""
-    from app.models import Category, CategoryType
-    
-    if Category.query.first() is not None:
-        return
-    
-    defaults = [
-        # 收入类
-        ('工资', '职业收入', '主业', CategoryType.INCOME),
-        ('兼职', '职业收入', '副业', CategoryType.INCOME),
-        ('投资收益', '投资收入', '分红', CategoryType.INCOME),
-        ('其他收入', '其他', '其他', CategoryType.INCOME),
-        # 支出类
-        ('餐饮', '日常生活', '饮食', CategoryType.EXPENSE),
-        ('交通', '日常生活', '出行', CategoryType.EXPENSE),
-        ('购物', '日常生活', '消费', CategoryType.EXPENSE),
-        ('住房', '固定支出', '租金/房贷', CategoryType.EXPENSE),
-        ('水电煤', '固定支出', '公用事业', CategoryType.EXPENSE),
-        ('通讯', '固定支出', '电话/网络', CategoryType.EXPENSE),
-        ('医疗', '健康', '医疗保健', CategoryType.EXPENSE),
-        ('教育', '成长', '学习培训', CategoryType.EXPENSE),
-        ('娱乐', '休闲', '娱乐消费', CategoryType.EXPENSE),
-        ('其他支出', '其他', '其他', CategoryType.EXPENSE),
-        # 转账类
-        ('账户转账', '转账', '内部转账', CategoryType.TRANSFER),
-        # 特殊类
-        ('账户初始化', '特殊', '开户', CategoryType.SPECIAL),
-    ]
-    
-    for name, cls, subclass, ctype in defaults:
-        cat = Category(
-            category_name=name,
-            category_class=cls,
-            category_subclass=subclass,
-            category_type=ctype
-        )
-        db.session.add(cat)
-    
-    db.session.commit()

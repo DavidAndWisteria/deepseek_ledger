@@ -51,13 +51,39 @@
             </div>
         </div>
         
+        <div class="form-row-3">
+            <div class="form-group">
+                <label for="account_create_date">创建日期</label>
+                <input type="date" id="account_create_date" name="account_create_date" 
+                       value="{{ today_date() }}">
+            </div>
+            <div class="form-group">
+                <label for="account_close_date">关闭日期</label>
+                <input type="date" id="account_close_date" name="account_close_date">
+                <small style="color: #aaa;">如已关闭可填写</small>
+            </div>
+            <div class="form-group">
+                <label for="account_owner_id">账户拥有者</label>
+                <select id="account_owner_id" name="account_owner_id">
+                    {% for member in members %}
+                    <option value="{{ member.owner_id }}" 
+                            {% if member.owner_id == current_owner.owner_id %}selected{% endif %}>
+                        {{ member.owner_name }}
+                        {% if member.user and member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
+                        {% if member.owner_id == current_owner.owner_id %}(我){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
         <button type="submit" class="btn btn-primary">✓ 添加账户</button>
     </form>
 </div>
 
 <!-- 账户列表 -->
 <div class="card">
-    <h3>📋 我的账户 ({{ accounts|length }})</h3>
+    <h3>📋 账户列表 ({{ accounts|length }})</h3>
     
     {% if accounts %}
     <div style="overflow-x: auto;">
@@ -69,7 +95,10 @@
                     <th>类型</th>
                     <th>机构</th>
                     <th>货币</th>
+                    <th>拥有者</th>
                     <th>创建日期</th>
+                    <th>关闭日期</th>
+                    <th>状态</th>
                     <th>操作</th>
                 </tr>
             </thead>
@@ -81,13 +110,34 @@
                     <td>{{ account.account_type.value }}</td>
                     <td>{{ account.account_custodian }}</td>
                     <td>{{ account.account_currency_name }}</td>
-                    <td>{{ account.account_create_date.strftime('%Y-%m-%d') }}</td>
                     <td>
-                        <button onclick="editAccount({{ account.account_id }}, '{{ account.account_name }}', '{{ account.account_other_name or '' }}', '{{ account.account_custodian }}')" 
+                        {{ account.owner.owner_name }}
+                        {% if account.owner.owner_id == current_owner.owner_id %}
+                            <span class="badge" style="background: #e94560; color: white;">我</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '-' }}</td>
+                    <td>{{ account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '-' }}</td>
+                    <td>
+                        {% if account.account_close_date %}
+                            <span class="badge" style="background: #fadbd8; color: #e74c3c;">已关闭</span>
+                        {% else %}
+                            <span class="badge" style="background: #d5f5e3; color: #27ae60;">使用中</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <button onclick="openEditModal(this)" 
+                                data-id="{{ account.account_id }}"
+                                data-name="{{ account.account_name }}"
+                                data-other="{{ account.account_other_name or '' }}"
+                                data-custodian="{{ account.account_custodian }}"
+                                data-createdate="{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '' }}"
+                                data-closedate="{{ account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '' }}"
+                                data-ownerid="{{ account.account_owner_id }}"
                                 class="btn btn-secondary btn-sm">✏️ 编辑</button>
                         <form method="POST" action="{{ url_for('accounts.delete_account', account_id=account.account_id) }}" 
                               style="display: inline;"
-                              onsubmit="return confirm('确定删除此账户？关联的交易记录不会被删除。');">
+                              onsubmit="return confirm('确定删除此账户？');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-danger btn-sm">🗑 删除</button>
                         </form>
@@ -107,23 +157,52 @@
 
 <!-- 编辑账户弹窗 -->
 <div id="edit-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
-    <div class="card" style="max-width: 500px; width: 90%;">
+    <div class="card" style="max-width: 550px; width: 90%;">
         <h3>✏️ 编辑账户</h3>
         <form id="edit-form" method="POST">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="form-group">
-                <label>账户名称</label>
-                <input type="text" id="edit-account-name" name="account_name" required>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>账户名称</label>
+                    <input type="text" id="edit-name" name="account_name" required>
+                </div>
+                <div class="form-group">
+                    <label>别名</label>
+                    <input type="text" id="edit-other" name="account_other_name">
+                </div>
             </div>
+            
             <div class="form-group">
-                <label>别名</label>
-                <input type="text" id="edit-account-other-name" name="account_other_name">
+                <label>机构/钱包</label>
+                <input type="text" id="edit-custodian" name="account_custodian" required>
             </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>创建日期</label>
+                    <input type="date" id="edit-create-date" name="account_create_date">
+                </div>
+                <div class="form-group">
+                    <label>关闭日期</label>
+                    <input type="date" id="edit-close-date" name="account_close_date">
+                </div>
+            </div>
+            
+            {% if current_user.is_adult() %}
             <div class="form-group">
-                <label>机构</label>
-                <input type="text" id="edit-account-custodian" name="account_custodian" required>
+                <label>账户拥有者</label>
+                <select id="edit-owner-id" name="account_owner_id">
+                    {% for member in members %}
+                    <option value="{{ member.owner_id }}">
+                        {{ member.owner_name }}
+                    </option>
+                    {% endfor %}
+                </select>
             </div>
-            <div style="display: flex; gap: 12px;">
+            {% endif %}
+            
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
                 <button type="submit" class="btn btn-primary">💾 保存</button>
                 <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
             </div>
@@ -132,16 +211,36 @@
 </div>
 
 <script>
-    function editAccount(id, name, otherName, custodian) {
+    function openEditModal(btn) {
+        const id = btn.dataset.id;
         document.getElementById('edit-form').action = '/accounts/' + id + '/edit';
-        document.getElementById('edit-account-name').value = name;
-        document.getElementById('edit-account-other-name').value = otherName;
-        document.getElementById('edit-account-custodian').value = custodian;
+        document.getElementById('edit-name').value = btn.dataset.name;
+        document.getElementById('edit-other').value = btn.dataset.other;
+        document.getElementById('edit-custodian').value = btn.dataset.custodian;
+        document.getElementById('edit-create-date').value = btn.dataset.createdate;
+        document.getElementById('edit-close-date').value = btn.dataset.closedate;
+        
+        const ownerSelect = document.getElementById('edit-owner-id');
+        if (ownerSelect) {
+            for (let i = 0; i < ownerSelect.options.length; i++) {
+                if (ownerSelect.options[i].value == btn.dataset.ownerid) {
+                    ownerSelect.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+        
         document.getElementById('edit-modal').style.display = 'flex';
     }
     
     function closeEditModal() {
         document.getElementById('edit-modal').style.display = 'none';
+    }
+    
+    window.onclick = function(event) {
+        if (event.target == document.getElementById('edit-modal')) {
+            closeEditModal();
+        }
     }
 </script>
 {% endblock %}
