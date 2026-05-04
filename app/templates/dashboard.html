@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 style="margin-bottom: 24px; color: #2c3e50;">📊 财务仪表盘</h1>
+
+<!-- 统计卡片 -->
+<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+    <div class="card" style="text-align: center;">
+        <div style="font-size: 14px; color: #888; margin-bottom: 8px;">💰 总收入</div>
+        <div style="font-size: 28px; font-weight: bold; color: #27ae60;">
+            ¥{{ "%.2f"|format(income) }}
+        </div>
+    </div>
+    
+    <div class="card" style="text-align: center;">
+        <div style="font-size: 14px; color: #888; margin-bottom: 8px;">💸 总支出</div>
+        <div style="font-size: 28px; font-weight: bold; color: #e74c3c;">
+            ¥{{ "%.2f"|format(expense) }}
+        </div>
+    </div>
+    
+    <div class="card" style="text-align: center;">
+        <div style="font-size: 14px; color: #888; margin-bottom: 8px;">📈 结余</div>
+        <div style="font-size: 28px; font-weight: bold; color: {{ '#' + ('27ae60' if balance >= 0 else 'e74c3c') }};">
+            ¥{{ "%.2f"|format(balance) }}
+        </div>
+    </div>
+</div>
+
+<!-- 添加记录表单 -->
+<div class="card">
+    <h3 style="margin-bottom: 16px; color: #2c3e50;">➕ 添加记录</h3>
+    
+    <form method="POST" action="{{ url_for('records.add_record') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+                <label for="record_type">类型</label>
+                <select id="record_type" name="record_type" required>
+                    <option value="expense">📤 支出</option>
+                    <option value="income">📥 收入</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="amount">金额 (¥)</label>
+                <input type="number" id="amount" name="amount" 
+                       step="0.01" min="0.01" max="99999999.99" 
+                       placeholder="0.00" required>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+                <label for="category">分类</label>
+                <input type="text" id="category" name="category" 
+                       placeholder="例如：餐饮、交通、工资" 
+                       maxlength="50" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="description">备注（可选）</label>
+                <input type="text" id="description" name="description" 
+                       placeholder="添加备注说明" 
+                       maxlength="200">
+            </div>
+        </div>
+        
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;">
+            ✓ 添加记录
+        </button>
+    </form>
+</div>
+
+<!-- 记录列表 -->
+<div class="card">
+    <h3 style="margin-bottom: 16px; color: #2c3e50;">📋 最近记录</h3>
+    
+    {% if records %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>日期</th>
+                    <th>类型</th>
+                    <th>分类</th>
+                    <th>金额</th>
+                    <th>备注</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in records %}
+                <tr>
+                    <td>{{ record.date.strftime('%Y-%m-%d') }}</td>
+                    <td>
+                        {% if record.record_type == 'income' %}
+                            <span class="text-income">📥 收入</span>
+                        {% else %}
+                            <span class="text-expense">📤 支出</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ record.category }}</td>
+                    <td>
+                        <span class="{{ 'text-income' if record.record_type == 'income' else 'text-expense' }}">
+                            ¥{{ "%.2f"|format(record.amount) }}
+                        </span>
+                    </td>
+                    <td>{{ record.description if record.description else '-' }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('records.delete_record', record_id=record.id) }}" 
+                              style="display: inline;"
+                              onsubmit="return confirm('确定要删除这条记录吗？此操作不可恢复。');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-danger btn-sm">🗑 删除</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 40px; color: #999;">
+        <p style="font-size: 48px; margin-bottom: 16px;">📭</p>
+        <p>暂无记录，开始添加你的第一笔收支吧！</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
