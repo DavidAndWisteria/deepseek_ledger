@@ -14,26 +14,39 @@ def get_user_owner():
     return None
 
 
-def get_visible_transactions_query(start_date=None, end_date=None):
-    """获取当前用户可见的交易查询"""
+def get_visible_transactions_query(start_date=None, end_date=None, status_filter=None, 
+                                   category_id=None, account_id=None):
+    """获取当前用户可见的交易查询，支持按状态、分类、账户筛选"""
     owner = get_user_owner()
     if not owner:
-        return Transaction.query.filter(False)
+        return Transaction.query.filter(False)  # 返回空查询
     
     query = Transaction.query
     
+    # 成人可看家庭所有交易，小孩只看自己的
     if current_user.can_view_family_data():
-        # 成人可看家庭所有交易
         family_owner_ids = [o.owner_id for o in Owner.query.filter_by(family_id=owner.family_id).all()]
         query = query.filter(Transaction.trans_owner_id.in_(family_owner_ids))
     else:
-        # 小孩只能看自己的
         query = query.filter_by(trans_owner_id=owner.owner_id)
     
+    # 日期范围筛选
     if start_date:
         query = query.filter(Transaction.trans_datetime >= start_date)
     if end_date:
         query = query.filter(Transaction.trans_datetime <= end_date)
+    
+    # 状态筛选
+    if status_filter:
+        query = query.filter_by(trans_status=TransactionStatus(status_filter))
+    
+    # 分类筛选
+    if category_id:
+        query = query.filter_by(trans_category_id=category_id)
+    
+    # 账户筛选
+    if account_id:
+        query = query.filter_by(trans_account_id=account_id)
     
     return query.order_by(Transaction.trans_datetime.desc())
 
@@ -41,7 +54,7 @@ def get_visible_transactions_query(start_date=None, end_date=None):
 @transactions.route('/')
 @login_required
 def dashboard():
-    """仪表盘"""
+    """仪表盘 - 显示交易列表和统计"""
     owner = get_user_owner()
     if not owner:
         flash('请先设置你的个人信息')
@@ -52,10 +65,15 @@ def dashboard():
     start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     end_of_month = (start_of_month + timedelta(days=32)).replace(day=1) - timedelta(seconds=1)
     
+    # 获取筛选参数
     start_date = request.args.get('start_date', start_of_month.strftime('%Y-%m-%d'))
     end_date = request.args.get('end_date', end_of_month.strftime('%Y-%m-%d'))
     status_filter = request.args.get('status', '')
+    category_id = request.args.get('category_id', type=int)
+    account_id = request.args.get('account_id', type=int)
+    active_tab = request.args.get('tab', 'add-tab')
     
+    # 解析日期
     try:
         start = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
         end = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
@@ -63,7 +81,10 @@ def dashboard():
         start = start_of_month
         end = end_of_month
     
-    transactions_list = get_visible_transactions_query(start, end).all()
+    # 获取交易列表
+    transactions_list = get_visible_transactions_query(
+        start, end, status_filter, category_id, account_id
+    ).all()
     
     # 统计
     total_income = sum(t.trans_amount for t in transactions_list if t.is_income())
@@ -71,8 +92,15 @@ def dashboard():
     total_transfer = sum(abs(t.trans_amount) for t in transactions_list if t.is_transfer())
     unverified_count = sum(1 for t in transactions_list if t.trans_status == TransactionStatus.UNVERIFIED)
     
-    accounts = Account.query.filter_by(account_owner_id=owner.owner_id).all()
-    categories = Category.query.all()
+    # 获取账户列表（按类型-机构-拥有者-名称排序）
+    accounts = Account.query.filter_by(account_owner_id=owner.owner_id)\
+        .order_by(Account.account_type, Account.account_custodian, 
+                  Account.account_owner_id, Account.account_name).all()
+    
+    # 获取分类列表（按大类-子类-名称排序）
+    categories = Category.query.order_by(
+        Category.category_class, Category.category_subclass, Category.category_name
+    ).all()
     
     return render_template(
         'dashboard.html',
@@ -83,44 +111,55 @@ def dashboard():
         total_expense=total_expense,
         total_transfer=total_transfer,
         balance=total_income - total_expense,
-        unverified_count=unverified_count,  # 确保这行存在
+        unverified_count=unverified_count,
         start_date=start_date,
         end_date=end_date,
         status_filter=status_filter,
-        transaction_statuses=TransactionStatus
+        category_filter=category_id or '',
+        account_filter=account_id or '',
+        transaction_statuses=TransactionStatus,
+        active_tab=active_tab,
+        now=datetime.now(timezone.utc)
     )
 
 
 @transactions.route('/add', methods=['POST'])
 @login_required
 def add_transaction():
-    """添加交易"""
+    """添加交易 - 支持收入、支出、转账"""
     owner = get_user_owner()
     if not owner:
         flash('请先设置你的个人信息')
         return redirect(url_for('transactions.dashboard'))
     
+    # 获取表单数据
     trans_type = request.form.get('trans_type')
     account_id = request.form.get('account_id', type=int)
     category_id = request.form.get('category_id', type=int)
     amount = request.form.get('amount', type=float)
     description = request.form.get('description', '')
     trans_date = request.form.get('trans_date', '')
+    trans_time = request.form.get('trans_time', '00:00')
     
-    # 验证
+    # 验证必填字段
     if not account_id or not category_id or not amount:
         flash('请填写完整信息')
         return redirect(url_for('transactions.dashboard'))
     
+    # 验证金额有效性
     if amount <= 0:
         flash('金额必须大于0')
         return redirect(url_for('transactions.dashboard'))
     
+    # 组合日期和时间，精确到分钟
     try:
-        trans_datetime = datetime.strptime(trans_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        trans_datetime = datetime.strptime(
+            f'{trans_date} {trans_time}', '%Y-%m-%d %H:%M'
+        ).replace(tzinfo=timezone.utc)
     except ValueError:
         trans_datetime = datetime.now(timezone.utc)
     
+    # 验证分类和账户
     category = db.session.get(Category, category_id)
     account = db.session.get(Account, account_id)
     
@@ -128,6 +167,7 @@ def add_transaction():
         flash('无效的分类或账户')
         return redirect(url_for('transactions.dashboard'))
     
+    # 根据类型创建交易
     if trans_type == 'income':
         # 收入：正金额
         transaction = Transaction(
@@ -153,6 +193,7 @@ def add_transaction():
         db.session.add(transaction)
     
     elif trans_type == 'transfer':
+        # 转账：产生两条配对记录
         to_account_id = request.form.get('to_account_id', type=int)
         if not to_account_id or to_account_id == account_id:
             flash('请选择不同的转出和转入账户')
@@ -168,7 +209,7 @@ def add_transaction():
             trans_owner_id=owner.owner_id
         )
         db.session.add(trans_out)
-        db.session.flush()
+        db.session.flush()  # 获取 trans_id
         
         # 转入记录（正金额）
         trans_in = Transaction(
@@ -178,28 +219,30 @@ def add_transaction():
             trans_account_id=to_account_id,
             trans_category_id=category_id,
             trans_owner_id=owner.owner_id,
-            trans_counter_id=trans_out.trans_id
+            trans_counter_id=trans_out.trans_id  # 关联转出记录
         )
         db.session.add(trans_in)
         db.session.flush()
         
-        # 更新转出记录的counter_id
+        # 更新转出记录的 counter_id
         trans_out.trans_counter_id = trans_in.trans_id
         db.session.add(trans_out)
     
     db.session.commit()
     flash('交易添加成功')
-    return redirect(url_for('transactions.dashboard'))
+    return redirect(url_for('transactions.dashboard', tab='list-tab'))
 
 
 @transactions.route('/delete/<int:trans_id>', methods=['POST'])
 @login_required
 def delete_transaction(trans_id):
+    """删除交易 - 如果是转账则同时删除配对记录"""
     transaction = db.session.get(Transaction, trans_id)
     if not transaction:
         flash('交易不存在')
         return redirect(url_for('transactions.dashboard'))
     
+    # 权限检查
     owner = get_user_owner()
     if not owner or transaction.trans_owner_id != owner.owner_id:
         flash('无权删除此交易')
@@ -214,17 +257,19 @@ def delete_transaction(trans_id):
     db.session.delete(transaction)
     db.session.commit()
     flash('交易已删除')
-    return redirect(url_for('transactions.dashboard'))
+    return redirect(url_for('transactions.dashboard', tab='list-tab'))
+
 
 @transactions.route('/status/<int:trans_id>/<status>', methods=['POST'])
 @login_required
 def update_status(trans_id, status):
-    """更新单笔交易状态"""
+    """更新单笔交易状态（未核对/已核对/有疑问/已对账）"""
     transaction = db.session.get(Transaction, trans_id)
     if not transaction:
         flash('交易不存在')
         return redirect(url_for('transactions.dashboard'))
     
+    # 权限检查
     owner = get_user_owner()
     if not owner or transaction.trans_owner_id != owner.owner_id:
         flash('无权操作此交易')
@@ -237,7 +282,7 @@ def update_status(trans_id, status):
     except ValueError:
         flash('无效的状态')
     
-    return redirect(url_for('transactions.dashboard'))
+    return redirect(url_for('transactions.dashboard', tab='list-tab'))
 
 
 @transactions.route('/batch-verify', methods=['POST'])
@@ -258,9 +303,83 @@ def batch_verify():
     for trans_id in trans_ids:
         transaction = db.session.get(Transaction, trans_id)
         if transaction and transaction.trans_owner_id == owner.owner_id:
-            transaction.trans_status = TransactionStatus.VERIFIED
-            count += 1
+            # 只核对未核对状态的交易
+            if transaction.trans_status == TransactionStatus.UNVERIFIED:
+                transaction.trans_status = TransactionStatus.VERIFIED
+                count += 1
     
     db.session.commit()
     flash(f'已核对 {count} 笔交易')
-    return redirect(url_for('transactions.dashboard'))
+    return redirect(url_for('transactions.dashboard', tab='list-tab'))
+
+
+@transactions.route('/edit/<int:trans_id>', methods=['POST'])
+@login_required
+def edit_transaction(trans_id):
+    """编辑交易"""
+    transaction = db.session.get(Transaction, trans_id)
+    if not transaction:
+        flash('交易不存在')
+        return redirect(url_for('transactions.dashboard'))
+    
+    owner = get_user_owner()
+    if not owner or transaction.trans_owner_id != owner.owner_id:
+        flash('无权编辑此交易')
+        return redirect(url_for('transactions.dashboard'))
+    
+    # 获取表单数据
+    amount = request.form.get('amount', type=float)
+    category_id = request.form.get('category_id', type=int)
+    account_id = request.form.get('account_id', type=int)
+    description = request.form.get('description', '')
+    trans_date = request.form.get('trans_date', '')
+    trans_time = request.form.get('trans_time', '00:00')
+    
+    if not account_id or not category_id or not amount:
+        flash('请填写完整信息')
+        return redirect(url_for('transactions.dashboard'))
+    
+    # 判断原交易类型
+    is_pair = transaction.trans_counter_id is not None
+    
+    if not is_pair:
+        # 非转账交易：直接更新
+        transaction.trans_amount = amount if transaction.trans_amount > 0 else -amount
+        transaction.trans_account_id = account_id
+        transaction.trans_category_id = category_id
+        transaction.trans_desc = description
+    else:
+        # 转账交易：更新两条记录
+        counter = db.session.get(Transaction, transaction.trans_counter_id)
+        if transaction.trans_amount < 0:
+            transaction.trans_amount = -amount
+            if counter:
+                counter.trans_amount = amount
+                counter.trans_account_id = account_id
+        else:
+            transaction.trans_amount = amount
+            if counter:
+                counter.trans_amount = -amount
+                counter.trans_account_id = account_id
+        
+        transaction.trans_account_id = account_id
+        transaction.trans_category_id = category_id
+        transaction.trans_desc = description
+        if counter:
+            counter.trans_category_id = category_id
+            counter.trans_desc = description
+    
+    # 更新日期时间
+    try:
+        trans_datetime = datetime.strptime(
+            f'{trans_date} {trans_time}', '%Y-%m-%d %H:%M'
+        ).replace(tzinfo=timezone.utc)
+        transaction.trans_datetime = trans_datetime
+        if is_pair and counter:
+            counter.trans_datetime = trans_datetime
+    except ValueError:
+        pass
+    
+    db.session.commit()
+    flash('交易更新成功')
+    return redirect(url_for('transactions.dashboard', tab='list-tab'))
