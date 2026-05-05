@@ -365,11 +365,25 @@
             <a href="{{ url_for('transactions.dashboard') }}" class="{{ 'active' if request.endpoint == 'transactions.dashboard' }}">📊 仪表盘</a>
             <a href="{{ url_for('accounts.list_accounts') }}" class="{{ 'active' if request.endpoint and 'accounts' in request.endpoint }}">🏦 账户管理</a>
             <a href="{{ url_for('categories.list_categories') }}" class="{{ 'active' if request.endpoint and 'categories' in request.endpoint }}">📂 分类管理</a>
-            <a href="{{ url_for('family.manage_family') }}" class="{{ 'active' if request.endpoint and 'family' in request.endpoint }}">👨‍👩‍👧‍👦 家庭</a>
         </div>
-        <div class="nav-right">
-            <span>👤 {{ current_user.username }} ({{ '成人' if current_user.is_adult() else '小孩' }})</span>
-            <a href="{{ url_for('auth.logout') }}" class="btn-logout">退出</a>
+                <div class="nav-right">
+            <div class="user-menu" style="position: relative;">
+                <button onclick="toggleUserMenu()" class="btn-user" style="background: transparent; color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                    👤 {{ current_user.username }}
+                    <span style="font-size: 10px;">▼</span>
+                </button>
+                <div id="user-dropdown" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 4px; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 180px; z-index: 1000; overflow: hidden;">
+                    <a href="{{ url_for('family.manage_family') }}" style="display: block; padding: 12px 16px; color: #333; text-decoration: none; font-size: 14px; border-bottom: 1px solid #f0f0f0;">
+                        👨‍👩‍👧‍👦 家庭管理
+                    </a>
+                    <a href="{{ url_for('importer.import_page') }}" style="display: block; padding: 12px 16px; color: #333; text-decoration: none; font-size: 14px; border-bottom: 1px solid #f0f0f0;">
+                        📥 数据导入
+                    </a>
+                    <a href="{{ url_for('auth.logout') }}" style="display: block; padding: 12px 16px; color: #e74c3c; text-decoration: none; font-size: 14px;">
+                        🚪 退出登录
+                    </a>
+                </div>
+            </div>
         </div>
     </nav>
     {% endif %}
@@ -398,6 +412,21 @@
             document.querySelector(`.tab[data-tab="${tabName}"]`).classList.add('active');
             document.getElementById(tabName).classList.add('active');
         }
+    </script>
+
+    <script>
+        function toggleUserMenu() {
+            const dropdown = document.getElementById('user-dropdown');
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        // 点击其他地方关闭下拉菜单
+        document.addEventListener('click', function(event) {
+            const menu = document.querySelector('.user-menu');
+            if (menu && !menu.contains(event.target)) {
+                document.getElementById('user-dropdown').style.display = 'none';
+            }
+        });
     </script>
 </body>
 </html>

@@ -11,7 +11,7 @@
             <p style="color: #aaa; font-size: 14px;">
                 创建于 {{ family.created_at.strftime('%Y-%m-%d') }} · 
                 {{ members|length }} 名成员 · 
-                {{ users|selectattr('is_adult')|list|length }} 名成人
+                {{ users|selectattr('role', 'equalto', 'ADULT')|list|length }} 名成人
             </p>
         </div>
         <div style="font-size: 48px;">👨‍👩‍👧‍👦</div>
