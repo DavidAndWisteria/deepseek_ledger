@@ -55,6 +55,54 @@ def create_app():
     # 创建数据库表
     with app.app_context():
         from app import models
-        db.create_all()
+        from sqlalchemy import inspect, MetaData
+        
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        if not existing_tables:
+            # 全新数据库，直接创建所有表
+            db.create_all()
+        else:
+            # 检查每个模型表的结构
+            metadata = db.metadata
+            for table_name, table in metadata.tables.items():
+                if table_name not in existing_tables:
+                    # 表不存在，直接创建
+                    table.create(db.engine)
+                else:
+                    # 检查列是否匹配
+                    existing_columns = {c['name'] for c in inspector.get_columns(table_name)}
+                    model_columns = {c.name for c in table.columns}
+                    
+                    missing_columns = model_columns - existing_columns
+                    
+                    if missing_columns:
+                        # 有缺失列，需要重建表
+                        # 1. 备份数据
+                        backup_data = None
+                        try:
+                            result = db.session.execute(table.select())
+                            backup_data = [dict(row._mapping) for row in result]
+                        except Exception:
+                            pass
+                        
+                        # 2. 删除旧表
+                        table.drop(db.engine)
+                        
+                        # 3. 创建新表
+                        table.create(db.engine)
+                        
+                        # 4. 恢复数据（只恢复存在的列）
+                        if backup_data:
+                            new_columns = {c.name for c in table.columns}
+                            for row in backup_data:
+                                filtered_row = {k: v for k, v in row.items() if k in new_columns}
+                                if filtered_row:
+                                    try:
+                                        db.session.execute(table.insert().values(**filtered_row))
+                                    except Exception:
+                                        pass
+                            db.session.commit()
 
     return app

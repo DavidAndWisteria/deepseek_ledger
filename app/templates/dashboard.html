@@ -23,11 +23,15 @@
             ${{ "%.2f"|format(balance) }}
         </div>
     </div>
+    <div class="summary-card">
+        <div class="label">⚠ 待核对</div>
+        <div class="value" style="color: #856404;">{{ unverified_count }}</div>
+    </div>
 </div>
 
 <!-- 日期筛选 -->
 <div class="card">
-    <form method="GET" action="{{ url_for('transactions.dashboard') }}" style="display: flex; gap: 16px; align-items: end;">
+    <form method="GET" action="{{ url_for('transactions.dashboard') }}" style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap;">
         <div class="form-group" style="margin-bottom: 0;">
             <label>开始日期</label>
             <input type="date" name="start_date" value="{{ start_date }}">
@@ -36,11 +40,21 @@
             <label>结束日期</label>
             <input type="date" name="end_date" value="{{ end_date }}">
         </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>状态</label>
+            <select name="status">
+                <option value="">全部</option>
+                <option value="UNVERIFIED" {{ 'selected' if status_filter == 'UNVERIFIED' }}>未核对</option>
+                <option value="VERIFIED" {{ 'selected' if status_filter == 'VERIFIED' }}>已核对</option>
+                <option value="FLAGGED" {{ 'selected' if status_filter == 'FLAGGED' }}>有疑问</option>
+                <option value="RECONCILED" {{ 'selected' if status_filter == 'RECONCILED' }}>已对账</option>
+            </select>
+        </div>
         <button type="submit" class="btn btn-secondary" style="height: 40px;">🔍 筛选</button>
     </form>
 </div>
 
-<!-- 标签页：添加交易 / 交易列表 -->
+<!-- 标签页 -->
 <div class="tabs">
     <div class="tab active" data-tab="add-tab" onclick="switchTab('add-tab')">➕ 添加交易</div>
     <div class="tab" data-tab="list-tab" onclick="switchTab('list-tab')">📋 交易列表</div>
@@ -103,20 +117,16 @@
                 </div>
                 <div class="form-group">
                     <label for="trans_date">日期</label>
-                    <input type="date" id="trans_date" name="trans_date" 
-                           value="{{ start_date }}">
+                    <input type="date" id="trans_date" name="trans_date" value="{{ start_date }}">
                 </div>
             </div>
             
             <div class="form-group">
                 <label for="description">备注</label>
-                <input type="text" id="description" name="description" 
-                       placeholder="可选备注" maxlength="500">
+                <input type="text" id="description" name="description" placeholder="可选备注" maxlength="500">
             </div>
             
-            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">
-                ✓ 添加交易
-            </button>
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">✓ 添加交易</button>
         </form>
     </div>
 </div>
@@ -125,22 +135,37 @@
 <div id="list-tab" class="tab-content">
     <div class="card">
         {% if transactions %}
+        {% if unverified_count > 0 %}
+        <div style="margin-bottom: 12px;">
+            <form id="batch-form" method="POST" action="{{ url_for('transactions.batch_verify') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-secondary">✓ 批量核对选中项（共 {{ unverified_count }} 笔待核对）</button>
+            </form>
+        </div>
+        {% endif %}
         <div style="overflow-x: auto;">
             <table>
                 <thead>
                     <tr>
+                        <th style="width: 30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll()"></th>
                         <th>日期</th>
                         <th>类型</th>
                         <th>账户</th>
                         <th>分类</th>
                         <th>金额</th>
                         <th>备注</th>
+                        <th>状态</th>
                         <th>操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for t in transactions %}
                     <tr>
+                        <td>
+                            {% if t.trans_status.value == 'UNVERIFIED' %}
+                            <input type="checkbox" name="trans_ids" value="{{ t.trans_id }}" class="trans-checkbox" form="batch-form">
+                            {% endif %}
+                        </td>
                         <td>{{ t.trans_datetime.strftime('%Y-%m-%d') }}</td>
                         <td>
                             {% if t.is_income() %}
@@ -160,11 +185,37 @@
                         </td>
                         <td>{{ t.trans_desc or '-' }}</td>
                         <td>
+                            <span class="badge" style="
+                                {% if t.trans_status.value == 'UNVERIFIED' %}background: #fef3cd; color: #856404;
+                                {% elif t.trans_status.value == 'VERIFIED' %}background: #d4edda; color: #155724;
+                                {% elif t.trans_status.value == 'FLAGGED' %}background: #f8d7da; color: #721c24;
+                                {% elif t.trans_status.value == 'RECONCILED' %}background: #cce5ff; color: #004085;
+                                {% endif %}">
+                                {% if t.trans_status.value == 'UNVERIFIED' %}⚠ 未核对
+                                {% elif t.trans_status.value == 'VERIFIED' %}✓ 已核对
+                                {% elif t.trans_status.value == 'FLAGGED' %}⚑ 有疑问
+                                {% elif t.trans_status.value == 'RECONCILED' %}✓✓ 已对账
+                                {% endif %}
+                            </span>
+                        </td>
+                        <td style="white-space: nowrap;">
+                            {% if t.trans_status.value == 'UNVERIFIED' %}
+                            <form method="POST" action="{{ url_for('transactions.update_status', trans_id=t.trans_id, status='VERIFIED') }}" style="display: inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm" style="background: #28a745; color: white; font-size: 11px; padding: 3px 8px;">✓</button>
+                            </form>
+                            {% endif %}
+                            {% if t.trans_status.value != 'FLAGGED' %}
+                            <form method="POST" action="{{ url_for('transactions.update_status', trans_id=t.trans_id, status='FLAGGED') }}" style="display: inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm" style="background: #ffc107; color: #333; font-size: 11px; padding: 3px 8px;">⚑</button>
+                            </form>
+                            {% endif %}
                             <form method="POST" action="{{ url_for('transactions.delete_transaction', trans_id=t.trans_id) }}" 
                                   style="display: inline;"
-                                  onsubmit="return confirm('删除此交易将同时删除关联的转账记录，确定继续？');">
+                                  onsubmit="return confirm('确定删除此交易？');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="btn btn-danger btn-sm">🗑 删除</button>
+                                <button type="submit" class="btn btn-danger btn-sm">🗑</button>
                             </form>
                         </td>
                     </tr>
@@ -173,8 +224,8 @@
             </table>
         </div>
         {% else %}
-        <div style="text-align: center; padding: 40px; color: #999;">
-            <p style="font-size: 48px; margin-bottom: 16px;">📭</p>
+        <div style="text-align: center; padding: 60px; color: #999;">
+            <p style="font-size: 48px;">📭</p>
             <p>暂无交易记录</p>
         </div>
         {% endif %}
@@ -186,12 +237,10 @@
         const transType = document.getElementById('trans_type').value;
         const toAccountGroup = document.getElementById('to-account-group');
         const toAccountSelect = document.getElementById('to_account_id');
-        const categorySelect = document.getElementById('category_id');
         
         if (transType === 'transfer') {
             toAccountGroup.style.display = 'block';
             toAccountSelect.required = true;
-            // 筛选转账分类
             filterCategories('T');
         } else if (transType === 'income') {
             toAccountGroup.style.display = 'none';
@@ -214,14 +263,8 @@
                 options[i].style.display = 'none';
             }
         }
-        // 重置选择
         document.getElementById('category_id').value = '';
     }
-    
-    // 页面加载时初始化
-    document.addEventListener('DOMContentLoaded', function() {
-        onTypeChange();
-    });
     
     function switchTab(tabName) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -229,5 +272,15 @@
         document.querySelector(`.tab[data-tab="${tabName}"]`).classList.add('active');
         document.getElementById(tabName).classList.add('active');
     }
+    
+    function toggleSelectAll() {
+        const selectAll = document.getElementById('select-all');
+        const checkboxes = document.querySelectorAll('.trans-checkbox');
+        checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    }
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        onTypeChange();
+    });
 </script>
 {% endblock %}

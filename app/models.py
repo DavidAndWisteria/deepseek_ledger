@@ -37,6 +37,12 @@ class DepositStatus(str, Enum):
     MATURED = 'MATURED'
 
 
+class TransactionStatus(str, Enum):
+    UNVERIFIED = 'UNVERIFIED'      # 未核对
+    VERIFIED = 'VERIFIED'          # 已核对
+    FLAGGED = 'FLAGGED'            # 标记（有疑问）
+
+
 # ===============================================================
 # 家庭表 - Family
 # ===============================================================
@@ -180,6 +186,7 @@ class Transaction(db.Model):
     trans_account_id = db.Column(db.Integer, db.ForeignKey('account.account_id'), nullable=False)
     trans_category_id = db.Column(db.Integer, db.ForeignKey('category.category_id'), nullable=False)
     trans_owner_id = db.Column(db.Integer, db.ForeignKey('owner.owner_id'), nullable=False)
+    trans_status = db.Column(db.Enum(TransactionStatus), default=TransactionStatus.UNVERIFIED, nullable=False)
     
     # 转账配对
     trans_counter_id = db.Column(db.Integer, db.ForeignKey('transaction.trans_id'), nullable=True)

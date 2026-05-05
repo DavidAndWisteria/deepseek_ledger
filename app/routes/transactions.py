@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app import db
-from app.models import Transaction, Account, Category, Owner
+from app.models import Transaction, Account, Category, Owner, TransactionStatus
 
 transactions = Blueprint('transactions', __name__)
 
@@ -54,6 +54,7 @@ def dashboard():
     
     start_date = request.args.get('start_date', start_of_month.strftime('%Y-%m-%d'))
     end_date = request.args.get('end_date', end_of_month.strftime('%Y-%m-%d'))
+    status_filter = request.args.get('status', '')
     
     try:
         start = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
@@ -68,6 +69,7 @@ def dashboard():
     total_income = sum(t.trans_amount for t in transactions_list if t.is_income())
     total_expense = sum(abs(t.trans_amount) for t in transactions_list if t.is_expense())
     total_transfer = sum(abs(t.trans_amount) for t in transactions_list if t.is_transfer())
+    unverified_count = sum(1 for t in transactions_list if t.trans_status == TransactionStatus.UNVERIFIED)
     
     accounts = Account.query.filter_by(account_owner_id=owner.owner_id).all()
     categories = Category.query.all()
@@ -81,8 +83,11 @@ def dashboard():
         total_expense=total_expense,
         total_transfer=total_transfer,
         balance=total_income - total_expense,
+        unverified_count=unverified_count,  # 确保这行存在
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        status_filter=status_filter,
+        transaction_statuses=TransactionStatus
     )
 
 
@@ -209,4 +214,53 @@ def delete_transaction(trans_id):
     db.session.delete(transaction)
     db.session.commit()
     flash('交易已删除')
+    return redirect(url_for('transactions.dashboard'))
+
+@transactions.route('/status/<int:trans_id>/<status>', methods=['POST'])
+@login_required
+def update_status(trans_id, status):
+    """更新单笔交易状态"""
+    transaction = db.session.get(Transaction, trans_id)
+    if not transaction:
+        flash('交易不存在')
+        return redirect(url_for('transactions.dashboard'))
+    
+    owner = get_user_owner()
+    if not owner or transaction.trans_owner_id != owner.owner_id:
+        flash('无权操作此交易')
+        return redirect(url_for('transactions.dashboard'))
+    
+    try:
+        transaction.trans_status = TransactionStatus(status)
+        db.session.commit()
+        flash('状态已更新')
+    except ValueError:
+        flash('无效的状态')
+    
+    return redirect(url_for('transactions.dashboard'))
+
+
+@transactions.route('/batch-verify', methods=['POST'])
+@login_required
+def batch_verify():
+    """批量核对选中的交易"""
+    owner = get_user_owner()
+    if not owner:
+        flash('请先设置个人信息')
+        return redirect(url_for('transactions.dashboard'))
+    
+    trans_ids = request.form.getlist('trans_ids', type=int)
+    if not trans_ids:
+        flash('请选择要核对的交易')
+        return redirect(url_for('transactions.dashboard'))
+    
+    count = 0
+    for trans_id in trans_ids:
+        transaction = db.session.get(Transaction, trans_id)
+        if transaction and transaction.trans_owner_id == owner.owner_id:
+            transaction.trans_status = TransactionStatus.VERIFIED
+            count += 1
+    
+    db.session.commit()
+    flash(f'已核对 {count} 笔交易')
     return redirect(url_for('transactions.dashboard'))

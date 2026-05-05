@@ -2,7 +2,7 @@ import pytest
 from app import db
 from app.models import (
     User, Family, Owner, Account, Category, Transaction,
-    AccountType, CategoryType, UserRole, DepositStatus
+    AccountType, CategoryType, UserRole, TransactionStatus
 )
 from datetime import datetime, timezone
 
@@ -267,3 +267,35 @@ class TestTransactionModel:
             db.session.add(transaction)
             db.session.commit()
             assert transaction.trans_currency_name == 'USD'
+
+    def test_transaction_default_status(self, app, test_owner, test_account, test_category):
+        """测试交易默认状态为未核对"""
+        with app.app_context():
+            transaction = Transaction(
+                trans_datetime=datetime.now(timezone.utc),
+                trans_amount=50.00,
+                trans_account_id=test_account,
+                trans_category_id=test_category,
+                trans_owner_id=test_owner
+            )
+            db.session.add(transaction)
+            db.session.commit()
+            assert transaction.trans_status == TransactionStatus.UNVERIFIED
+
+    def test_transaction_status_change(self, app, test_transaction):
+        """测试修改交易状态"""
+        with app.app_context():
+            transaction = db.session.get(Transaction, test_transaction)
+            assert transaction.trans_status == TransactionStatus.UNVERIFIED
+            transaction.trans_status = TransactionStatus.VERIFIED
+            db.session.commit()
+            assert transaction.trans_status == TransactionStatus.VERIFIED
+
+    def test_transaction_status_enum_values(self, app, test_transaction):
+        """测试所有状态枚举值"""
+        with app.app_context():
+            transaction = db.session.get(Transaction, test_transaction)
+            for status in TransactionStatus:
+                transaction.trans_status = status
+                db.session.commit()
+                assert transaction.trans_status == status
