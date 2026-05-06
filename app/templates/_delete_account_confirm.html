@@ -1,0 +1,44 @@
+<div id="delete-content-data">
+    <p style="margin-bottom: 12px;">账户 <strong>"{{ account.account_name }}"</strong> 有 <strong>{{ count }}</strong> 笔关联交易。</p>
+    <p style="color: #888; font-size: 13px; margin-bottom: 16px;">请选择如何处理这些交易：</p>
+    
+    <form method="POST" action="{{ url_for('accounts.confirm_delete_account', account_id=account.account_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <div class="form-group" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 12px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="radio" name="action" value="delete" checked onchange="toggleTargetSelect()">
+                <span>🗑 <strong>删除所有关联交易</strong>（不可恢复）</span>
+            </label>
+        </div>
+        
+        <div class="form-group" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 16px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="radio" name="action" value="migrate" onchange="toggleTargetSelect()">
+                <span>📦 <strong>迁移到另一个账户</strong></span>
+            </label>
+            <select name="target_account_id" id="target-account-select" style="margin-top: 8px; display: none;">
+                <option value="">选择目标账户</option>
+                {% for acc in target_accounts %}
+                <option value="{{ acc.account_id }}">
+                    {{ acc.account_type.value }} · {{ acc.account_custodian }} · {{ acc.owner.owner_name }} · {{ acc.account_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div style="display: flex; gap: 12px;">
+            <button type="submit" class="btn btn-danger">⚠ 确认删除</button>
+            <button type="button" class="btn btn-secondary" onclick="closeDeleteModal()">取消</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    function toggleTargetSelect() {
+        const migrateRadio = document.querySelector('input[value="migrate"]');
+        const select = document.getElementById('target-account-select');
+        select.style.display = migrateRadio.checked ? 'block' : 'none';
+        select.required = migrateRadio.checked;
+    }
+</script>

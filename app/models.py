@@ -146,6 +146,14 @@ class Account(db.Model):
                                    foreign_keys='Transaction.trans_account_id')
     balances = db.relationship('AccountBalance', backref='account', lazy='dynamic')
     
+    __table_args__ = (
+        db.UniqueConstraint(
+            'account_name', 'account_type', 'account_custodian',
+            'account_currency_name', 'account_owner_id',
+            name='uq_account_unique'
+        ),
+    )
+
     def __repr__(self):
         return f'<Account {self.account_name} ({self.account_type.value})>'
 
@@ -167,6 +175,13 @@ class Category(db.Model):
     # 关系
     transactions = db.relationship('Transaction', backref='category_rel', lazy='dynamic')
     
+    __table_args__ = (
+        db.UniqueConstraint(
+            'category_name', 'category_class', 'category_subclass', 'category_type',
+            name='uq_category_unique'
+        ),
+    )
+
     def __repr__(self):
         return f'<Category {self.category_name} ({self.category_type.value})>'
 
@@ -290,3 +305,55 @@ class CurrencyConversion(db.Model):
     
     def __repr__(self):
         return f'<FX {self.currency_name_lhs}/{self.currency_name_rhs} = {self.currency_conversion_rate}>'
+    
+
+# ===============================================================
+# Bluecoins 映射表
+# ===============================================================
+
+class BluecoinsAccountMapping(db.Model):
+    """Bluecoins 账户名 → 系统 Account 映射"""
+    __tablename__ = 'bluecoins_account_mapping'
+    
+    mapping_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    bluecoins_name = db.Column(db.String(200), nullable=False, index=True)  # Bluecoins 原始账户名
+    account_id = db.Column(db.Integer, db.ForeignKey('account.account_id'), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey('owner.owner_id'), nullable=False)  # 所属所有者
+    is_manual = db.Column(db.Boolean, default=False)  # 是否为手动映射
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # 关系
+    account = db.relationship('Account', backref='bluecoins_mappings')
+    
+    def __repr__(self):
+        return f'<BC AccountMap {self.bluecoins_name} → Account {self.account_id}>'
+
+
+class BluecoinsCategoryMapping(db.Model):
+    """Bluecoins 五元组 → 系统 Category 映射（全局，不区分 owner）"""
+    __tablename__ = 'bluecoins_category_mapping'
+    
+    mapping_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    bluecoins_year = db.Column(db.String(10), nullable=False)
+    bluecoins_type = db.Column(db.String(20), nullable=False)       # Bluecoins 类型（收入/支出/转账）
+    bluecoins_group = db.Column(db.String(200), nullable=False)     # 类别分组名称
+    bluecoins_category = db.Column(db.String(200), nullable=False)  # 类别
+    bluecoins_title = db.Column(db.String(200), nullable=False)     # 标题
+    category_id = db.Column(db.Integer, db.ForeignKey('category.category_id'), nullable=False)
+    is_manual = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    # 关系
+    category = db.relationship('Category', backref='bluecoins_mappings')
+    
+    # 五元组联合唯一索引（全局）
+    __table_args__ = (
+        db.UniqueConstraint(
+            'bluecoins_year', 'bluecoins_type', 'bluecoins_group',
+            'bluecoins_category', 'bluecoins_title',
+            name='uq_bc_category_mapping'
+        ),
+    )
+    
+    def __repr__(self):
+        return f'<BC CategoryMap {self.bluecoins_group}/{self.bluecoins_category}/{self.bluecoins_title} → Category {self.category_id}>'

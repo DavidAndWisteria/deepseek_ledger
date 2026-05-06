@@ -1,7 +1,8 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required
+from flask_wtf.csrf import generate_csrf
 from app import db
-from app.models import Category, CategoryType
+from app.models import Category, CategoryType, BluecoinsCategoryMapping, Transaction
 
 categories = Blueprint('categories', __name__)
 
@@ -9,6 +10,7 @@ categories = Blueprint('categories', __name__)
 @categories.route('/categories')
 @login_required
 def list_categories():
+    """分类列表"""
     cats = Category.query.order_by(Category.category_type, Category.category_class, Category.category_subclass).all()
     return render_template('categories.html', categories=cats, category_types=CategoryType)
 
@@ -16,6 +18,7 @@ def list_categories():
 @categories.route('/categories/add', methods=['POST'])
 @login_required
 def add_category():
+    """添加分类"""
     name = request.form.get('category_name', '').strip()
     other_name = request.form.get('category_other_name', '').strip()
     cls = request.form.get('category_class', '').strip()
@@ -45,6 +48,7 @@ def add_category():
 @categories.route('/categories/<int:category_id>/edit', methods=['POST'])
 @login_required
 def edit_category(category_id):
+    """编辑分类"""
     category = db.session.get(Category, category_id)
     if not category:
         flash('分类不存在')
@@ -61,13 +65,137 @@ def edit_category(category_id):
     return redirect(url_for('categories.list_categories'))
 
 
+@categories.route('/categories/<int:category_id>/check-delete')
+@login_required
+def check_delete_category(category_id):
+    """检查分类关联交易（AJAX）"""
+    category = db.session.get(Category, category_id)
+    if not category:
+        return '<p style="color: #e74c3c; text-align: center;">分类不存在</p>'
+    
+    transaction_count = Transaction.query.filter_by(trans_category_id=category_id).count()
+    csrf_token = generate_csrf()
+    
+    if transaction_count == 0:
+        return f'''<div id="delete-content-data">
+            <p style="text-align: center; margin-bottom: 16px;">该分类没有关联交易，可以安全删除。</p>
+            <form method="POST" action="{url_for('categories.confirm_delete_category', category_id=category_id)}">
+                <input type="hidden" name="csrf_token" value="{csrf_token}">
+                <input type="hidden" name="action" value="delete">
+                <div style="display: flex; gap: 12px; justify-content: center;">
+                    <button type="submit" class="btn btn-danger">确认删除</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeDeleteModal()">取消</button>
+                </div>
+            </form>
+        </div>'''
+    
+    cats = Category.query.order_by(Category.category_type, Category.category_class, Category.category_subclass).all()
+    target_categories = [c for c in cats if c.category_id != category_id]
+    
+    html = f'''<div id="delete-content-data">
+    <p style="margin-bottom: 12px;">分类 <strong>"{category.category_name}"</strong> 有 <strong>{transaction_count}</strong> 笔关联交易。</p>
+    <p style="color: #888; font-size: 13px; margin-bottom: 16px;">请选择如何处理这些交易：</p>
+    
+    <form method="POST" action="{url_for('categories.confirm_delete_category', category_id=category_id)}">
+        <input type="hidden" name="csrf_token" value="{csrf_token}">
+        
+        <div class="form-group" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 12px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="radio" name="action" value="delete" checked onchange="toggleTargetSelect()">
+                <span>🗑 <strong>删除所有关联交易</strong>（不可恢复）</span>
+            </label>
+        </div>
+        
+        <div class="form-group" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 16px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="radio" name="action" value="migrate" onchange="toggleTargetSelect()">
+                <span>📦 <strong>迁移到另一个分类</strong></span>
+            </label>
+            <select name="target_category_id" id="target-category-select" style="margin-top: 8px; display: none;">
+                <option value="">选择目标分类</option>'''
+    
+    for c in target_categories:
+        html += f'<option value="{c.category_id}">{c.category_class} › {c.category_subclass or "-"} › {c.category_name} ({c.category_type.value})</option>'
+    
+    html += '''</select>
+        </div>
+        
+        <div style="display: flex; gap: 12px;">
+            <button type="submit" class="btn btn-danger">⚠ 确认删除</button>
+            <button type="button" class="btn btn-secondary" onclick="closeDeleteModal()">取消</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    function toggleTargetSelect() {
+        const migrateRadio = document.querySelector('input[value="migrate"]');
+        const select = document.getElementById("target-category-select");
+        select.style.display = migrateRadio.checked ? "block" : "none";
+        select.required = migrateRadio.checked;
+    }
+</script>'''
+    
+    return html
+
+
 @categories.route('/categories/<int:category_id>/delete', methods=['POST'])
 @login_required
 def delete_category(category_id):
+    """删除分类（无关联交易时直接删除，否则跳转弹窗）"""
     category = db.session.get(Category, category_id)
     if not category:
         flash('分类不存在')
         return redirect(url_for('categories.list_categories'))
+    
+    # 如果有直接 POST 请求（旧版兼容），检查关联
+    transaction_count = Transaction.query.filter_by(trans_category_id=category_id).count()
+    
+    if transaction_count > 0:
+        flash(f'分类 "{category.category_name}" 有 {transaction_count} 笔关联交易，请通过列表中的删除按钮处理')
+        return redirect(url_for('categories.list_categories'))
+    
+    BluecoinsCategoryMapping.query.filter_by(category_id=category_id).delete()
+    db.session.delete(category)
+    db.session.commit()
+    flash('分类已删除')
+    return redirect(url_for('categories.list_categories'))
+
+
+@categories.route('/categories/<int:category_id>/delete/confirm', methods=['POST'])
+@login_required
+def confirm_delete_category(category_id):
+    """确认删除分类（处理关联交易）"""
+    category = db.session.get(Category, category_id)
+    if not category:
+        flash('分类不存在')
+        return redirect(url_for('categories.list_categories'))
+    
+    action = request.form.get('action', 'delete')
+    
+    if action == 'migrate':
+        target_category_id = request.form.get('target_category_id', type=int)
+        target = db.session.get(Category, target_category_id)
+        if not target:
+            flash('目标分类无效')
+            return redirect(url_for('categories.list_categories'))
+        
+        updated = Transaction.query.filter_by(trans_category_id=category_id).update(
+            {'trans_category_id': target_category_id}, synchronize_session='fetch'
+        )
+        flash(f'已将 {updated} 笔交易迁移到 "{target.category_name}"')
+    else:
+        transactions = Transaction.query.filter_by(trans_category_id=category_id).all()
+        deleted = len(transactions)
+        for t in transactions:
+            if t.trans_counter_id:
+                counter = db.session.get(Transaction, t.trans_counter_id)
+                if counter:
+                    db.session.delete(counter)
+            db.session.delete(t)
+        flash(f'已删除 {deleted} 笔关联交易')
+    
+    BluecoinsCategoryMapping.query.filter_by(category_id=category_id).delete()
     db.session.delete(category)
     db.session.commit()
     flash('分类已删除')

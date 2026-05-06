@@ -92,12 +92,8 @@
                                 data-name="{{ cat.category_name }}"
                                 data-other="{{ cat.category_other_name or '' }}"
                                 class="btn btn-secondary btn-sm">✏️ 编辑</button>
-                        <form method="POST" action="{{ url_for('categories.delete_category', category_id=cat.category_id) }}" 
-                              style="display: inline;"
-                              onsubmit="return confirm('确定删除此分类？');">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-danger btn-sm">🗑 删除</button>
-                        </form>
+                        <button onclick="confirmDeleteCategory({{ cat.category_id }})" 
+                                class="btn btn-danger btn-sm">🗑 删除</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -158,6 +154,16 @@
     </div>
 </div>
 
+<!-- 删除分类确认弹窗 -->
+<div id="delete-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1001; justify-content: center; align-items: center;">
+    <div class="card" style="max-width: 550px; width: 90%;">
+        <h3>⚠ 确认删除分类</h3>
+        <div id="delete-content">
+            <p style="text-align: center; color: #888;">正在检查关联交易...</p>
+        </div>
+    </div>
+</div>
+
 <script>
     function openEditModal(btn) {
         const id = btn.dataset.id;
@@ -174,9 +180,30 @@
         document.getElementById('edit-modal').style.display = 'none';
     }
     
+    function closeDeleteModal() {
+        document.getElementById('delete-modal').style.display = 'none';
+    }
+    
+    function confirmDeleteCategory(categoryId) {
+        document.getElementById('delete-modal').style.display = 'flex';
+        document.getElementById('delete-content').innerHTML = '<p style="text-align: center; color: #888;">正在检查关联交易...</p>';
+        
+        fetch('/categories/' + categoryId + '/check-delete')
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('delete-content').innerHTML = html;
+        })
+        .catch(() => {
+            document.getElementById('delete-content').innerHTML = '<p style="text-align: center; color: #e74c3c;">检查失败，请重试</p>';
+        });
+    }
+    
     window.onclick = function(event) {
         if (event.target == document.getElementById('edit-modal')) {
             closeEditModal();
+        }
+        if (event.target == document.getElementById('delete-modal')) {
+            closeDeleteModal();
         }
     }
 </script>

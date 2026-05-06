@@ -52,6 +52,9 @@ def create_app():
     from app.routes.family import family as family_blueprint
     app.register_blueprint(family_blueprint)
 
+    from app.routes.importer import importer as importer_blueprint
+    app.register_blueprint(importer_blueprint)
+
     # 创建数据库表
     with app.app_context():
         from app import models
