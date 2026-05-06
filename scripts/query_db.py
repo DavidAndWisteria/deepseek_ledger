@@ -156,3 +156,10 @@ if __name__ == '__main__':
     
     # query_sql("SELECT * FROM [transaction] WHERE trans_amount > 1000 LIMIT 10")
     # query_sql("SELECT category_type, COUNT(*) as cnt FROM category GROUP BY category_type")
+
+    # ==========================================
+    # 删除指定表
+    # ==========================================
+
+    # query_sql("DROP TABLE bluecoins_account_mapping")
+    # query_sql("DROP TABLE account")

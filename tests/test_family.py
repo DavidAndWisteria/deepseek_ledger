@@ -14,6 +14,26 @@ class TestFamilyRoutes:
         assert '1 名成员' in content
         assert '1 名成人' in content
 
+    def test_family_page_excludes_family_owner(self, logged_in_client, app, test_family):
+        """家庭页面不显示家庭共享 Owner（user_id 为 None）"""
+        with app.app_context():
+            # 创建家庭共享 Owner
+            family_owner = Owner(
+                owner_name='测试家庭',
+                family_id=test_family,
+                user_id=None
+            )
+            db.session.add(family_owner)
+            db.session.commit()
+        
+        response = logged_in_client.get('/family')
+        assert response.status_code == 200
+        content = response.data.decode('utf-8')
+        # 仍然只有 1 名成员（家庭共享被过滤）
+        assert '1 名成员' in content
+        # 家庭共享名称不应出现在成员列表中
+        assert '测试家庭' not in content or '家庭共享' not in content
+
     def test_family_adult_count(self, logged_in_client, app, test_family):
         """验证家庭页面成人计数正确（区分成人/小孩）"""
         with app.app_context():

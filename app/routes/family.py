@@ -31,8 +31,11 @@ def manage_family():
         flash('未找到家庭信息')
         return redirect(url_for('transactions.dashboard'))
     
-    # 获取家庭所有成员
-    members = Owner.query.filter_by(family_id=family_obj.family_id).all()
+    # 获取家庭所有成员（排除家庭共享 Owner，即 user_id 为 None 的）
+    members = Owner.query.filter(
+        Owner.family_id == family_obj.family_id,
+        Owner.user_id.isnot(None)
+    ).all()
     
     # 获取家庭所有用户
     users = User.query.filter_by(family_id=family_obj.family_id).all()
