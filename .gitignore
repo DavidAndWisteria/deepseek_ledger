@@ -265,3 +265,6 @@ logs/
 
 # Docker
 docker-compose.override.yml
+
+# Debug
+scripts/debug/
