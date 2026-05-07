@@ -202,7 +202,6 @@ def confirm_transactions():
                 mapping = BluecoinsAccountMapping(
                     bluecoins_name=bc_name,
                     account_id=account.account_id,
-                    owner_id=current_user.owner.owner_id,
                     is_manual=True
                 )
                 db.session.add(mapping)

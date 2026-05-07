@@ -47,7 +47,13 @@ class TestAccountRoutes:
             assert account.account_name == '改名账户'
 
     def test_delete_account(self, logged_in_client, app, test_account):
-        response = logged_in_client.post(f'/accounts/{test_account}/delete', follow_redirects=True)
+        """删除账户（通过确认接口）"""
+        # 直接调用确认删除（无关联交易）
+        response = logged_in_client.post(
+            f'/accounts/{test_account}/delete/confirm',
+            data={'action': 'delete'},
+            follow_redirects=True
+        )
         assert response.status_code == 200
         
         with app.app_context():

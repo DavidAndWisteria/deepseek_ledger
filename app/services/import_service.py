@@ -1,5 +1,6 @@
 import csv
 import io
+from flask import current_app
 from datetime import datetime, timezone
 from app import db
 from app.models import (
@@ -39,14 +40,12 @@ class ImportService:
     
     def _load_existing_mappings(self):
         """加载已存在的 Bluecoins 映射"""
-        family_owner_ids = [o.owner_id for o in Owner.query.filter_by(family_id=self.family_id).all()]
-        
-        mappings = BluecoinsAccountMapping.query.filter(
-            BluecoinsAccountMapping.owner_id.in_(family_owner_ids)
-        ).all()
+        # 账户映射（全局）
+        mappings = BluecoinsAccountMapping.query.all()
         for m in mappings:
             self.account_map[m.bluecoins_name] = m.account_id
         
+        # 分类映射（全局）
         cat_mappings = BluecoinsCategoryMapping.query.all()
         for m in cat_mappings:
             key = (m.bluecoins_year, m.bluecoins_type, m.bluecoins_group,
@@ -143,7 +142,6 @@ class ImportService:
                     continue
                 
                 if combination_key in seen_combinations:
-                    db.session.rollback()
                     existing = Account.query.filter_by(
                         account_name=account.account_name,
                         account_owner_id=account.account_owner_id
@@ -152,7 +150,6 @@ class ImportService:
                         mapping = BluecoinsAccountMapping(
                             bluecoins_name=bluecoins_name,
                             account_id=existing.account_id,
-                            owner_id=self.owner.owner_id,
                             is_manual=False
                         )
                         db.session.add(mapping)
@@ -173,7 +170,6 @@ class ImportService:
                 mapping = BluecoinsAccountMapping(
                     bluecoins_name=bluecoins_name,
                     account_id=account.account_id,
-                    owner_id=self.owner.owner_id,
                     is_manual=False
                 )
                 db.session.add(mapping)
@@ -501,7 +497,6 @@ class ImportService:
                 mapping = BluecoinsAccountMapping(
                     bluecoins_name=bc_name,
                     account_id=int(account_id),
-                    owner_id=self.owner.owner_id,
                     is_manual=True
                 )
                 db.session.add(mapping)
@@ -690,7 +685,6 @@ class ImportService:
             mapping = BluecoinsAccountMapping(
                 bluecoins_name=bluecoins_name,
                 account_id=account.account_id,
-                owner_id=self.owner.owner_id,
                 is_manual=False
             )
             db.session.add(mapping)

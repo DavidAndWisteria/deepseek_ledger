@@ -150,3 +150,4 @@ def test_transaction(app, test_owner, test_account, test_category):
         db.session.add(transaction)
         db.session.commit()
         return transaction.trans_id
+    

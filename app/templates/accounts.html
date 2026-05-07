@@ -90,12 +90,12 @@
         <table>
             <thead>
                 <tr>
-                    <th>名称</th>
-                    <th>别名</th>
                     <th>类型</th>
                     <th>机构</th>
                     <th>货币</th>
                     <th>拥有者</th>
+                    <th>名称</th>
+                    <th>别名</th>
                     <th>创建日期</th>
                     <th>关闭日期</th>
                     <th>状态</th>
@@ -105,8 +105,6 @@
             <tbody>
                 {% for account in accounts %}
                 <tr>
-                    <td><strong>{{ account.account_name }}</strong></td>
-                    <td>{{ account.account_other_name or '-' }}</td>
                     <td>{{ account.account_type.value }}</td>
                     <td>{{ account.account_custodian }}</td>
                     <td>{{ account.account_currency_name }}</td>
@@ -118,6 +116,8 @@
                             <span class="badge" style="background: #e94560; color: white;">我</span>
                         {% endif %}
                     </td>
+                    <td><strong>{{ account.account_name }}</strong></td>
+                    <td>{{ account.account_other_name or '-' }}</td>
                     <td>{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '-' }}</td>
                     <td>{{ account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '-' }}</td>
                     <td>

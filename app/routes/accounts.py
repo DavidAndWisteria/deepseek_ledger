@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
+from sqlalchemy import nullsfirst
 from app import db
 from app.models import Account, AccountType, Owner, BluecoinsAccountMapping, Transaction
 
@@ -36,11 +37,27 @@ def list_accounts():
         family_owner_ids = [o.owner_id for o in Owner.query.filter_by(family_id=owner.family_id).all()]
         accounts_list = Account.query.filter(
             Account.account_owner_id.in_(family_owner_ids)
-        ).order_by(Account.account_create_date.desc()).all()
+        ).order_by(
+            nullsfirst(Account.account_close_date),  # 使用中（NULL）排前面
+            Account.account_type,
+            Account.account_custodian,
+            Account.account_currency_name,
+            Account.account_owner_id,
+            Account.account_name,
+            Account.account_other_name
+        ).all()
     else:
         accounts_list = Account.query.filter_by(
             account_owner_id=owner.owner_id
-        ).order_by(Account.account_create_date.desc()).all()
+        ).order_by(
+            nullsfirst(Account.account_close_date),
+            Account.account_type,
+            Account.account_custodian,
+            Account.account_currency_name,
+            Account.account_owner_id,
+            Account.account_name,
+            Account.account_other_name
+        ).all()
     
     members = get_family_members()
     

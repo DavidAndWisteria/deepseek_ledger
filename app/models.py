@@ -318,7 +318,6 @@ class BluecoinsAccountMapping(db.Model):
     mapping_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     bluecoins_name = db.Column(db.String(200), nullable=False, index=True)  # Bluecoins 原始账户名
     account_id = db.Column(db.Integer, db.ForeignKey('account.account_id'), nullable=False)
-    owner_id = db.Column(db.Integer, db.ForeignKey('owner.owner_id'), nullable=False)  # 所属所有者
     is_manual = db.Column(db.Boolean, default=False)  # 是否为手动映射
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
