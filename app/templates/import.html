@@ -51,54 +51,126 @@
         </ol>
     </div>
 
-    <!-- 导入区域 -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+<!-- 三列导入区域 -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
 
-        <!-- 账户导入 -->
-        <div class="card">
-            <h3>🏦 导入账户</h3>
-            <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
-                CSV 格式：账户, id, account_name, account_other_name, account_type, account_create_date, account_close_date, account_custodian, account_currency_name, account_owner
-            </p>
-            <form method="POST" action="{{ url_for('importer.import_accounts') }}" enctype="multipart/form-data">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="form-group">
-                    <input type="file" name="file" accept=".csv" required>
-                </div>
-                <button type="submit" class="btn btn-primary" style="width: 100%;">📤 导入账户</button>
-            </form>
-        </div>
-
-        <!-- 分类导入 -->
-        <div class="card">
-            <h3>📂 导入分类</h3>
-            <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
-                CSV 格式：年份, 类型, 类别分组名称, 类别, 标题, 总金额, 总笔数, category_id, category_name, category_other_name, category_class, category_subclass, category_type
-            </p>
-            <form method="POST" action="{{ url_for('importer.import_categories') }}" enctype="multipart/form-data">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="form-group">
-                    <input type="file" name="file" accept=".csv" required>
-                </div>
-                <button type="submit" class="btn btn-primary" style="width: 100%;">📤 导入分类</button>
-            </form>
-        </div>
-
-        <!-- 交易导入 -->
-        <div class="card">
-            <h3>💱 导入交易</h3>
-            <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
-                CSV 格式：类型, 日期, 设置时间, 标题, 金额, 货币, 汇率, 类别分组名称, 类别, 账户, 备注, 标签, 状态
-            </p>
-            <form method="POST" action="{{ url_for('importer.upload_transactions') }}" enctype="multipart/form-data">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="form-group">
-                    <input type="file" name="file" accept=".csv" required>
-                </div>
-                <button type="submit" class="btn btn-primary" style="width: 100%;">📤 上传预览</button>
-            </form>
-        </div>
+    <!-- 账户导入 -->
+    <div class="card" style="display: flex; flex-direction: column;">
+        <h3 style="margin-bottom: 16px;">🏦 导入账户</h3>
+        
+        <form method="POST" action="{{ url_for('importer.import_accounts') }}" enctype="multipart/form-data" style="margin-bottom: 12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group" style="margin-bottom: 12px;">
+                <input type="file" name="file" accept=".csv" required 
+                       style="padding: 8px; border: 1px dashed #ccc; border-radius: 6px; width: 100%; cursor: pointer;">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">📤 导入账户</button>
+        </form>
+        
+        <details style="font-size: 12px; color: #888; border-top: 1px solid #eee; padding-top: 10px;">
+            <summary style="cursor: pointer; font-weight: 500; color: #666; margin-bottom: 8px;">📋 格式说明与范例</summary>
+            <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; line-height: 1.8;">
+                <strong>列顺序：</strong><br>
+                账户, id, account_name, account_other_name, account_type, account_create_date, account_close_date, account_custodian, account_currency_name, account_owner
+                <br><br>
+                <strong>范例：</strong><br>
+                <span style="color: #27ae60;">"Dav - ZA"</span>, <span style="color: #888;">62</span>, <span style="color: #2980b9;">"众安港币活期"</span>, , <span style="color: #e74c3c;">"SAVING"</span>, <span style="color: #8e44ad;">2022-01-24</span>, , <span style="color: #e67e22;">"众安银行"</span>, <span style="color: #16a085;">"HKD"</span>, <span style="color: #2c3e50;">"David"</span>
+                <br><br>
+                <strong>字段说明：</strong><br>
+                <table style="margin-top: 4px; border-collapse: collapse; width: 100%;">
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">账户</td><td>Bluecoins 原始账户名（导入映射用）</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">id</td><td>人工标识，用于去重</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">account_name</td><td>账户名称 *</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">account_other_name</td><td>别名（可选）</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">account_type</td><td>类型：CASH/SAVING/CREDIT_CARD 等 *</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">account_create_date</td><td>创建日期 YYYY-MM-DD</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">account_close_date</td><td>关闭日期（可选）</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">account_custodian</td><td>机构/钱包 *</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">account_currency_name</td><td>货币代码：HKD/USD/CNY 等</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">account_owner</td><td>拥有者名称（匹配家庭成员）</td></tr>
+                </table>
+            </div>
+        </details>
     </div>
+
+    <!-- 分类导入 -->
+    <div class="card" style="display: flex; flex-direction: column;">
+        <h3 style="margin-bottom: 16px;">📂 导入分类</h3>
+        
+        <form method="POST" action="{{ url_for('importer.import_categories') }}" enctype="multipart/form-data" style="margin-bottom: 12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group" style="margin-bottom: 12px;">
+                <input type="file" name="file" accept=".csv" required 
+                       style="padding: 8px; border: 1px dashed #ccc; border-radius: 6px; width: 100%; cursor: pointer;">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">📤 导入分类</button>
+        </form>
+        
+        <details style="font-size: 12px; color: #888; border-top: 1px solid #eee; padding-top: 10px;">
+            <summary style="cursor: pointer; font-weight: 500; color: #666; margin-bottom: 8px;">📋 格式说明与范例</summary>
+            <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; line-height: 1.8;">
+                <strong>列顺序：</strong><br>
+                年份, 类型, 类别分组名称, 类别, 标题, 总金额, 总笔数, category_id, category_name, category_other_name, category_class, category_subclass, category_type
+                <br><br>
+                <strong>范例：</strong><br>
+                <span style="color: #888;">2021</span>, <span style="color: #e74c3c;">"支出"</span>, <span style="color: #27ae60;">"投资"</span>, <span style="color: #2980b9;">"基金收息"</span>, <span style="color: #8e44ad;">"U45024"</span>, 776.23, 1, <span style="color: #888;">1</span>, <span style="color: #2c3e50;">"联博美国债券"</span>, <span style="color: #16a085;">"U45024"</span>, <span style="color: #27ae60;">"投资"</span>, <span style="color: #2980b9;">"基金收息"</span>, <span style="color: #e67e22;">"I"</span>
+                <br><br>
+                <strong>字段说明：</strong><br>
+                <table style="margin-top: 4px; border-collapse: collapse; width: 100%;">
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">年份</td><td>Bluecoins 年份（映射用）</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">类型</td><td>收入/支出/转账（映射用）</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">类别分组名称</td><td>映射到 category_class</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">类别</td><td>映射到 category_subclass</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">标题</td><td>映射用标识</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">category_name</td><td>分类名称 *</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">category_other_name</td><td>别名（可选）</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">category_class</td><td>大类 *</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">category_subclass</td><td>子类</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">category_type</td><td>I=收入/E=支出/T=转账/S=特殊</td></tr>
+                </table>
+            </div>
+        </details>
+    </div>
+
+    <!-- 交易导入 -->
+    <div class="card" style="display: flex; flex-direction: column;">
+        <h3 style="margin-bottom: 16px;">💱 导入交易</h3>
+        
+        <form method="POST" action="{{ url_for('importer.upload_transactions') }}" enctype="multipart/form-data" style="margin-bottom: 12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group" style="margin-bottom: 12px;">
+                <input type="file" name="file" accept=".csv" required 
+                       style="padding: 8px; border: 1px dashed #ccc; border-radius: 6px; width: 100%; cursor: pointer;">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">📤 上传预览</button>
+        </form>
+        
+        <details style="font-size: 12px; color: #888; border-top: 1px solid #eee; padding-top: 10px;">
+            <summary style="cursor: pointer; font-weight: 500; color: #666; margin-bottom: 8px;">📋 格式说明与范例</summary>
+            <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; line-height: 1.8;">
+                <strong>列顺序：</strong><br>
+                类型, 日期, 设置时间, 标题, 金额, 货币, 汇率, 类别分组名称, 类别, 账户, 备注, 标签, 状态
+                <br><br>
+                <strong>范例：</strong><br>
+                <span style="color: #e74c3c;">"支出"</span>, <span style="color: #8e44ad;">"2026-04-09 18:36:00"</span>, "18:36", <span style="color: #2c3e50;">"上班交通"</span>, <span style="color: #e74c3c;">-5.90</span>, <span style="color: #16a085;">"HKD"</span>, 1.0000000000, <span style="color: #27ae60;">"日常"</span>, <span style="color: #2980b9;">"交通"</span>, <span style="color: #e67e22;">"Dav - 八达通"</span>, , , <span style="color: #27ae60;">"核对"</span>
+                <br><br>
+                <strong>字段说明：</strong><br>
+                <table style="margin-top: 4px; border-collapse: collapse; width: 100%;">
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">类型</td><td>收入/支出/转账</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">日期</td><td>YYYY-MM-DD HH:MM:SS</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">设置时间</td><td>HH:MM</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">标题</td><td>交易描述</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">金额</td><td>正=收入，负=支出</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">货币</td><td>HKD/USD/CNY 等</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">类别分组名称</td><td>匹配分类用</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">类别</td><td>匹配分类用</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">账户</td><td>Bluecoins 账户名（匹配用）</td></tr>
+                    <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">状态</td><td>核对=VERIFIED，空=UNVERIFIED</td></tr>
+                </table>
+            </div>
+        </details>
+    </div>
+</div>
 
     {% else %}
     <!-- 预览结果 -->
