@@ -1,323 +1,343 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1 style="margin-bottom: 24px; color: #1a1a2e;">📥 数据导入</h1>
+<h1 style="margin-bottom: 20px; color: #1a1a2e;">📥 数据导入</h1>
 
-<!-- 导入结果弹窗 -->
-{% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages and not preview %}
-    <div id="result-modal" style="display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center;">
-        <div class="card" style="max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;">
-            <h3>📋 导入结果</h3>
-            <div style="margin-bottom: 16px;">
-                {% for category, message in messages %}
-                <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px; font-size: 14px; line-height: 1.6;">
-                    {{ message }}
-                </div>
-                {% endfor %}
-            </div>
-            
-            {% if session.get('download_csv') %}
-            <div style="background: #fef9e7; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
-                <p style="margin-bottom: 8px; font-size: 13px;">⚠ 有 {{ session.get('download_skipped_count', 0) }} 笔交易被跳过。</p>
-                <a href="{{ url_for('importer.download_skipped') }}" class="btn" style="background: #f39c12; color: white;">📥 下载跳过的交易 CSV</a>
-            </div>
-            {% endif %}
-            
-            <button type="button" class="btn btn-primary" style="width: 100%;" onclick="closeResultModal()">关闭</button>
-        </div>
-    </div>
-    {% endif %}
-{% endwith %}
-
-{% if not preview %}
-<!-- 导入说明 -->
-<div class="card" style="background: #d4e6f1; color: #2980b9; margin-bottom: 20px;">
-    <h3 style="margin-bottom: 8px;">📋 导入步骤</h3>
-    <ol style="font-size: 13px; line-height: 1.8; padding-left: 20px;">
-        <li>先导入<strong>账户</strong>文件，建立 Bluecoins 账户到系统账户的映射</li>
-        <li>再导入<strong>分类</strong>文件，建立 Bluecoins 分类到系统分类的映射</li>
-        <li>最后导入<strong>交易</strong>文件，系统自动匹配已有映射</li>
-        <li>无法匹配的交易可手动映射或导出 CSV 稍后处理</li>
-    </ol>
+<!-- 导入标签页 -->
+<div class="tabs">
+    <div class="tab active" data-tab="bluecoins" onclick="switchImportTab('bluecoins')">💱 Bluecoins 导入</div>
+    <div class="tab" data-tab="other" onclick="switchImportTab('other')">📂 其他导入（即将推出）</div>
 </div>
 
-<!-- 导入区域 -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+<!-- Bluecoins 导入内容 -->
+<div id="bluecoins" class="tab-content active">
 
-    <!-- 账户导入 -->
-    <div class="card">
-        <h3>🏦 导入账户</h3>
-        <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
-            CSV 格式：账户, id, account_name, account_other_name, account_type, account_create_date, account_close_date, account_custodian, account_currency_name, account_owner
-        </p>
-        <form method="POST" action="{{ url_for('importer.import_accounts') }}" enctype="multipart/form-data">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="form-group">
-                <input type="file" name="file" accept=".csv" required>
-            </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%;">📤 导入账户</button>
-        </form>
-    </div>
-
-    <!-- 分类导入 -->
-    <div class="card">
-        <h3>📂 导入分类</h3>
-        <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
-            CSV 格式：年份, 类型, 类别分组名称, 类别, 标题, 总金额, 总笔数, category_id, category_name, category_other_name, category_class, category_subclass, category_type
-        </p>
-        <form method="POST" action="{{ url_for('importer.import_categories') }}" enctype="multipart/form-data">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="form-group">
-                <input type="file" name="file" accept=".csv" required>
-            </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%;">📤 导入分类</button>
-        </form>
-    </div>
-
-    <!-- 交易导入 -->
-    <div class="card">
-        <h3>💱 导入交易</h3>
-        <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
-            CSV 格式：类型, 日期, 设置时间, 标题, 金额, 货币, 汇率, 类别分组名称, 类别, 账户, 备注, 标签, 状态
-        </p>
-        <form method="POST" action="{{ url_for('importer.upload_transactions') }}" enctype="multipart/form-data">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="form-group">
-                <input type="file" name="file" accept=".csv" required>
-            </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%;">📤 上传预览</button>
-        </form>
-    </div>
-</div>
-
-{% else %}
-<!-- 预览结果 -->
-<div class="card" style="margin-bottom: 20px;">
-    <h3>📊 导入预览</h3>
-    <div class="summary-cards" style="margin-bottom: 0;">
-        <div class="summary-card">
-            <div class="label">✅ 成功匹配</div>
-            <div class="value text-income">{{ summary.transactions.success }}</div>
-        </div>
-        <div class="summary-card">
-            <div class="label">⏭ 需处理</div>
-            <div class="value" style="color: #856404;">{{ skipped_count }}</div>
-        </div>
-        <div class="summary-card">
-            <div class="label">❌ 失败</div>
-            <div class="value text-expense">{{ summary.transactions.failed }}</div>
-        </div>
-    </div>
-</div>
-
-{% if skipped_count > 0 %}
-<!-- 手动映射区域 -->
-<div class="card" style="margin-bottom: 20px;">
-    <h3>🔧 手动处理跳过的交易（共 {{ skipped_count }} 笔）</h3>
-    <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
-        为无法自动匹配的账户和分类选择对应关系。选择"跳过"则这些交易不会导入，可稍后下载 CSV 再处理。
-    </p>
-
-    <form method="POST" action="{{ url_for('importer.confirm_transactions') }}" id="confirm-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-        {% if missing_accounts %}
-        <h4 style="margin-bottom: 12px;">🏦 未匹配的账户</h4>
-        {% for bc_name in missing_accounts %}
-        <div class="form-group" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px;">
-            <label style="font-weight: 600; display: block; margin-bottom: 8px;">{{ bc_name }}</label>
-            <div style="display: flex; gap: 8px; align-items: center;">
-                <select name="map_account_{{ bc_name }}" style="flex: 1;" onchange="toggleNewAccount(this, 'new_acct_form_{{ loop.index }}')">
-                    <option value="">⏭ 跳过</option>
-                    <optgroup label="现有账户">
-                        {% for acc in accounts %}
-                        <option value="{{ acc.account_id }}">{{ acc.account_type.value }} · {{ acc.account_custodian }} · {{ acc.owner.owner_name }} · {{ acc.account_name }}</option>
-                        {% endfor %}
-                    </optgroup>
-                    <option value="__new__">➕ 创建新账户...</option>
-                </select>
-            </div>
-            <div id="new_acct_form_{{ loop.index }}" style="display: none; margin-top: 8px; padding: 12px; background: #fff; border: 1px solid #ddd; border-radius: 6px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                    <div>
-                        <label style="font-size: 11px; color: #888;">账户名称 *</label>
-                        <input type="text" name="new_account_{{ bc_name }}" value="{{ bc_name }}" 
-                               style="width: 100%; padding: 6px 8px; font-size: 13px;">
+    <!-- 导入结果弹窗 -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages and not preview %}
+        <div id="result-modal" style="display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center;">
+            <div class="card" style="max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;">
+                <h3>📋 导入结果</h3>
+                <div style="margin-bottom: 16px;">
+                    {% for category, message in messages %}
+                    <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px; font-size: 14px; line-height: 1.6;">
+                        {{ message }}
                     </div>
-                    <div>
-                        <label style="font-size: 11px; color: #888;">别名</label>
-                        <input type="text" name="new_acct_other_{{ bc_name }}" 
-                               style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
+                    {% endfor %}
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
-                    <div>
-                        <label style="font-size: 11px; color: #888;">机构 *</label>
-                        <input type="text" name="new_acct_custodian_{{ bc_name }}" value="导入创建" 
-                               style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #888;">类型</label>
-                        <select name="new_acct_type_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                            <option value="SAVING">SAVING - 储蓄账户</option>
-                            <option value="CASH">CASH - 现金</option>
-                            <option value="CREDIT_CARD">CREDIT_CARD - 信用卡</option>
-                            <option value="INVESTMENT">INVESTMENT - 投资账户</option>
-                            <option value="FUND">FUND - 基金</option>
-                            <option value="MORTGAGE">MORTGAGE - 按揭贷款</option>
-                            <option value="MPF">MPF - 强积金</option>
-                        </select>
-                    </div>
+                
+                {% if session.get('download_csv') %}
+                <div style="background: #fef9e7; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                    <p style="margin-bottom: 8px; font-size: 13px;">⚠ 有 {{ session.get('download_skipped_count', 0) }} 笔交易被跳过。</p>
+                    <a href="{{ url_for('importer.download_skipped') }}" class="btn" style="background: #f39c12; color: white;">📥 下载跳过的交易 CSV</a>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
-                    <div>
-                        <label style="font-size: 11px; color: #888;">货币</label>
-                        <select name="new_acct_currency_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                            <option value="HKD">HKD - 港币</option>
-                            <option value="USD">USD - 美元</option>
-                            <option value="CNY">CNY - 人民币</option>
-                            <option value="JPY">JPY - 日元</option>
-                            <option value="GBP">GBP - 英镑</option>
-                            <option value="EUR">EUR - 欧元</option>
-                            <option value="AUD">AUD - 澳元</option>
-                            <option value="SGD">SGD - 新加坡元</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #888;">拥有者</label>
-                        <select name="new_acct_owner_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                            {% for member in members %}
-                            <option value="{{ member.owner_id }}" {% if member.owner_id == current_owner.owner_id %}selected{% endif %}>
-                                {{ member.owner_name }}
-                                {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
-                                {% if member.owner_id == current_owner.owner_id %}(我){% endif %}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
-                    <div>
-                        <label style="font-size: 11px; color: #888;">创建日期</label>
-                        <input type="date" name="new_acct_create_date_{{ bc_name }}" 
-                               value="{{ today_date() }}"
-                               style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #888;">关闭日期</label>
-                        <input type="date" name="new_acct_close_date_{{ bc_name }}" 
-                               style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                        <small style="color: #aaa; font-size: 10px;">如已关闭可填写</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endfor %}
-        {% endif %}
-
-        {% if missing_categories %}
-        <h4 style="margin-top: 20px; margin-bottom: 12px;">📂 未匹配的分类</h4>
-        {% for cat_data in missing_categories %}
-        <div class="form-group" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px;">
-            <label style="font-weight: 600; display: block; margin-bottom: 8px; font-size: 13px;">
-                {{ cat_data.group }} › {{ cat_data.category }} › {{ cat_data.title }}
-                <br><small style="color: #888;">{{ cat_data.bc_type }}</small>
-                {% if cat_data.accounts %}
-                <br><small style="color: #3498db;">关联账户: {{ cat_data.accounts|join(', ') }}</small>
                 {% endif %}
-            </label>
-            <div style="display: flex; gap: 8px; align-items: center;">
-                <select name="map_category_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
-                        style="flex: 1;" onchange="toggleNewCategory(this, 'new_cat_form_{{ cat_data.key[0] }}_{{ loop.index }}')">
-                    <option value="">⏭ 跳过</option>
-                    <optgroup label="现有分类">
-                        {% for cat in all_categories %}
-                        <option value="{{ cat.category_id }}">{{ cat.category_class }} › {{ cat.category_subclass or '-' }} › {{ cat.category_name }} ({{ cat.category_type.value }})</option>
-                        {% endfor %}
-                    </optgroup>
-                    <option value="__new__">➕ 创建新分类...</option>
-                </select>
+                
+                <button type="button" class="btn btn-primary" style="width: 100%;" onclick="closeResultModal()">关闭</button>
             </div>
-            <div id="new_cat_form_{{ cat_data.key[0] }}_{{ loop.index }}" style="display: none; margin-top: 8px; padding: 12px; background: #fff; border: 1px solid #ddd; border-radius: 6px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
-                    <div>
-                        <label style="font-size: 11px; color: #888;">名称 *</label>
-                        <input type="text" name="new_category_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
-                               value="{{ cat_data.title }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #888;">大类 *</label>
-                        <input type="text" name="new_cat_class_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
-                               value="{{ cat_data.group }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #888;">子类</label>
-                        <input type="text" name="new_cat_subclass_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
-                               value="{{ cat_data.category }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
+        </div>
+        {% endif %}
+    {% endwith %}
+
+    {% if not preview %}
+    <!-- 导入说明 -->
+    <div class="card" style="background: #d4e6f1; color: #2980b9; margin-bottom: 20px;">
+        <h3 style="margin-bottom: 8px;">📋 导入步骤</h3>
+        <ol style="font-size: 13px; line-height: 1.8; padding-left: 20px;">
+            <li>先导入<strong>账户</strong>文件，建立 Bluecoins 账户到系统账户的映射</li>
+            <li>再导入<strong>分类</strong>文件，建立 Bluecoins 分类到系统分类的映射</li>
+            <li>最后导入<strong>交易</strong>文件，系统自动匹配已有映射</li>
+            <li>无法匹配的交易可手动映射或导出 CSV 稍后处理</li>
+        </ol>
+    </div>
+
+    <!-- 导入区域 -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+
+        <!-- 账户导入 -->
+        <div class="card">
+            <h3>🏦 导入账户</h3>
+            <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
+                CSV 格式：账户, id, account_name, account_other_name, account_type, account_create_date, account_close_date, account_custodian, account_currency_name, account_owner
+            </p>
+            <form method="POST" action="{{ url_for('importer.import_accounts') }}" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <input type="file" name="file" accept=".csv" required>
                 </div>
-                <div style="margin-top: 6px;">
-                    <label style="font-size: 11px; color: #888;">类型</label>
-                    <select name="new_cat_type_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
-                            style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                        <option value="E" {{ 'selected' if cat_data.bc_type == '支出' else '' }}>E - 支出</option>
-                        <option value="I" {{ 'selected' if cat_data.bc_type == '收入' else '' }}>I - 收入</option>
-                        <option value="T" {{ 'selected' if cat_data.bc_type == '转账' else '' }}>T - 转账</option>
-                        <option value="S">S - 特殊</option>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">📤 导入账户</button>
+            </form>
+        </div>
+
+        <!-- 分类导入 -->
+        <div class="card">
+            <h3>📂 导入分类</h3>
+            <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
+                CSV 格式：年份, 类型, 类别分组名称, 类别, 标题, 总金额, 总笔数, category_id, category_name, category_other_name, category_class, category_subclass, category_type
+            </p>
+            <form method="POST" action="{{ url_for('importer.import_categories') }}" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <input type="file" name="file" accept=".csv" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">📤 导入分类</button>
+            </form>
+        </div>
+
+        <!-- 交易导入 -->
+        <div class="card">
+            <h3>💱 导入交易</h3>
+            <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
+                CSV 格式：类型, 日期, 设置时间, 标题, 金额, 货币, 汇率, 类别分组名称, 类别, 账户, 备注, 标签, 状态
+            </p>
+            <form method="POST" action="{{ url_for('importer.upload_transactions') }}" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <input type="file" name="file" accept=".csv" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">📤 上传预览</button>
+            </form>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- 预览结果 -->
+    <div class="card" style="margin-bottom: 20px;">
+        <h3>📊 导入预览</h3>
+        <div class="summary-cards" style="margin-bottom: 0;">
+            <div class="summary-card">
+                <div class="label">✅ 成功匹配</div>
+                <div class="value text-income">{{ summary.transactions.success }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">⏭ 需处理</div>
+                <div class="value" style="color: #856404;">{{ skipped_count }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">❌ 失败</div>
+                <div class="value text-expense">{{ summary.transactions.failed }}</div>
+            </div>
+        </div>
+    </div>
+
+    {% if skipped_count > 0 %}
+    <!-- 手动映射区域 -->
+    <div class="card" style="margin-bottom: 20px;">
+        <h3>🔧 手动处理跳过的交易（共 {{ skipped_count }} 笔）</h3>
+        <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
+            为无法自动匹配的账户和分类选择对应关系。选择"跳过"则这些交易不会导入，可稍后下载 CSV 再处理。
+        </p>
+
+        <form method="POST" action="{{ url_for('importer.confirm_transactions') }}" id="confirm-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            {% if missing_accounts %}
+            <h4 style="margin-bottom: 12px;">🏦 未匹配的账户</h4>
+            {% for bc_name in missing_accounts %}
+            <div class="form-group" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px;">
+                <label style="font-weight: 600; display: block; margin-bottom: 8px;">{{ bc_name }}</label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <select name="map_account_{{ bc_name }}" style="flex: 1;" onchange="toggleNewAccount(this, 'new_acct_form_{{ loop.index }}')">
+                        <option value="">⏭ 跳过</option>
+                        <optgroup label="现有账户">
+                            {% for acc in accounts %}
+                            <option value="{{ acc.account_id }}">{{ acc.account_type.value }} · {{ acc.account_custodian }} · {{ acc.owner.owner_name }} · {{ acc.account_name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <option value="__new__">➕ 创建新账户...</option>
                     </select>
                 </div>
+                <div id="new_acct_form_{{ loop.index }}" style="display: none; margin-top: 8px; padding: 12px; background: #fff; border: 1px solid #ddd; border-radius: 6px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div>
+                            <label style="font-size: 11px; color: #888;">账户名称 *</label>
+                            <input type="text" name="new_account_{{ bc_name }}" value="{{ bc_name }}" 
+                                style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; color: #888;">别名</label>
+                            <input type="text" name="new_acct_other_{{ bc_name }}" 
+                                style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                        <div>
+                            <label style="font-size: 11px; color: #888;">机构 *</label>
+                            <input type="text" name="new_acct_custodian_{{ bc_name }}" value="导入创建" 
+                                style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; color: #888;">类型</label>
+                            <select name="new_acct_type_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                                <option value="SAVING">SAVING - 储蓄账户</option>
+                                <option value="CASH">CASH - 现金</option>
+                                <option value="CREDIT_CARD">CREDIT_CARD - 信用卡</option>
+                                <option value="INVESTMENT">INVESTMENT - 投资账户</option>
+                                <option value="FUND">FUND - 基金</option>
+                                <option value="MORTGAGE">MORTGAGE - 按揭贷款</option>
+                                <option value="MPF">MPF - 强积金</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                        <div>
+                            <label style="font-size: 11px; color: #888;">货币</label>
+                            <select name="new_acct_currency_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                                <option value="HKD">HKD - 港币</option>
+                                <option value="USD">USD - 美元</option>
+                                <option value="CNY">CNY - 人民币</option>
+                                <option value="JPY">JPY - 日元</option>
+                                <option value="GBP">GBP - 英镑</option>
+                                <option value="EUR">EUR - 欧元</option>
+                                <option value="AUD">AUD - 澳元</option>
+                                <option value="SGD">SGD - 新加坡元</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; color: #888;">拥有者</label>
+                            <select name="new_acct_owner_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                                {% for member in members %}
+                                <option value="{{ member.owner_id }}" {% if member.owner_id == current_owner.owner_id %}selected{% endif %}>
+                                    {{ member.owner_name }}
+                                    {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
+                                    {% if member.owner_id == current_owner.owner_id %}(我){% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                        <div>
+                            <label style="font-size: 11px; color: #888;">创建日期</label>
+                            <input type="date" name="new_acct_create_date_{{ bc_name }}" 
+                                value="{{ today_date() }}"
+                                style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; color: #888;">关闭日期</label>
+                            <input type="date" name="new_acct_close_date_{{ bc_name }}" 
+                                style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                            <small style="color: #aaa; font-size: 10px;">如已关闭可填写</small>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-        {% endfor %}
-        {% endif %}
+            {% endfor %}
+            {% endif %}
 
-        <h4 style="margin-top: 20px; margin-bottom: 12px;">📋 跳过的交易明细</h4>
-        <div style="overflow-x: auto; max-height: 300px; overflow-y: auto;">
-            <table>
-                <thead>
-                    <tr>
-                        <th>日期</th>
-                        <th>类型</th>
-                        <th>账户</th>
-                        <th>分类</th>
-                        <th>标题</th>
-                        <th>金额</th>
-                        <th>跳过原因</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in skipped %}
-                    <tr>
-                        <td style="white-space: nowrap;">{{ item.date }}</td>
-                        <td>{{ item.type }}</td>
-                        <td>{{ item.account }}</td>
-                        <td>{{ item.group }}/{{ item.category }}/{{ item.title }}</td>
-                        <td>{{ item.title }}</td>
-                        <td>{{ item.amount }}</td>
-                        <td><span style="color: #856404; font-size: 12px;">{{ item.reason }}</span></td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+            {% if missing_categories %}
+            <h4 style="margin-top: 20px; margin-bottom: 12px;">📂 未匹配的分类</h4>
+            {% for cat_data in missing_categories %}
+            <div class="form-group" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px;">
+                <label style="font-weight: 600; display: block; margin-bottom: 8px; font-size: 13px;">
+                    {{ cat_data.group }} › {{ cat_data.category }} › {{ cat_data.title }}
+                    <br><small style="color: #888;">{{ cat_data.bc_type }}</small>
+                    {% if cat_data.accounts %}
+                    <br><small style="color: #3498db;">关联账户: {{ cat_data.accounts|join(', ') }}</small>
+                    {% endif %}
+                </label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <select name="map_category_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                            style="flex: 1;" onchange="toggleNewCategory(this, 'new_cat_form_{{ cat_data.key[0] }}_{{ loop.index }}')">
+                        <option value="">⏭ 跳过</option>
+                        <optgroup label="现有分类">
+                            {% for cat in all_categories %}
+                            <option value="{{ cat.category_id }}">{{ cat.category_class }} › {{ cat.category_subclass or '-' }} › {{ cat.category_name }} ({{ cat.category_type.value }})</option>
+                            {% endfor %}
+                        </optgroup>
+                        <option value="__new__">➕ 创建新分类...</option>
+                    </select>
+                </div>
+                <div id="new_cat_form_{{ cat_data.key[0] }}_{{ loop.index }}" style="display: none; margin-top: 8px; padding: 12px; background: #fff; border: 1px solid #ddd; border-radius: 6px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                        <div>
+                            <label style="font-size: 11px; color: #888;">名称 *</label>
+                            <input type="text" name="new_category_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                                value="{{ cat_data.title }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; color: #888;">大类 *</label>
+                            <input type="text" name="new_cat_class_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                                value="{{ cat_data.group }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; color: #888;">子类</label>
+                            <input type="text" name="new_cat_subclass_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                                value="{{ cat_data.category }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                        </div>
+                    </div>
+                    <div style="margin-top: 6px;">
+                        <label style="font-size: 11px; color: #888;">类型</label>
+                        <select name="new_cat_type_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                                style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                            <option value="E" {{ 'selected' if cat_data.bc_type == '支出' else '' }}>E - 支出</option>
+                            <option value="I" {{ 'selected' if cat_data.bc_type == '收入' else '' }}>I - 收入</option>
+                            <option value="T" {{ 'selected' if cat_data.bc_type == '转账' else '' }}>T - 转账</option>
+                            <option value="S">S - 特殊</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% endif %}
 
-        <div style="display: flex; gap: 12px; margin-top: 20px; align-items: center;">
-            <button type="submit" class="btn btn-primary">✅ 确认导入（含手动映射）</button>
-            <button type="submit" name="skip_unmatched" value="1" class="btn" style="background: #f39c12; color: white;">⏭ 仅导入已匹配的（跳过其余）</button>
-            <a href="{{ url_for('importer.import_page') }}" class="btn btn-secondary">取消</a>
-        </div>
-    </form>
+            <h4 style="margin-top: 20px; margin-bottom: 12px;">📋 跳过的交易明细</h4>
+            <div style="overflow-x: auto; max-height: 300px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>日期</th>
+                            <th>类型</th>
+                            <th>账户</th>
+                            <th>分类</th>
+                            <th>标题</th>
+                            <th>金额</th>
+                            <th>跳过原因</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in skipped %}
+                        <tr>
+                            <td style="white-space: nowrap;">{{ item.date }}</td>
+                            <td>{{ item.type }}</td>
+                            <td>{{ item.account }}</td>
+                            <td>{{ item.group }}/{{ item.category }}/{{ item.title }}</td>
+                            <td>{{ item.title }}</td>
+                            <td>{{ item.amount }}</td>
+                            <td><span style="color: #856404; font-size: 12px;">{{ item.reason }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 20px; align-items: center;">
+                <button type="submit" class="btn btn-primary">✅ 确认导入（含手动映射）</button>
+                <button type="submit" name="skip_unmatched" value="1" class="btn" style="background: #f39c12; color: white;">⏭ 仅导入已匹配的（跳过其余）</button>
+                <a href="{{ url_for('importer.import_page') }}" class="btn btn-secondary">取消</a>
+            </div>
+        </form>
+    </div>
+    {% else %}
+    <div class="card" style="background: #d5f5e3; text-align: center; padding: 40px;">
+        <p style="font-size: 48px; margin-bottom: 16px;">🎉</p>
+        <h3>全部交易已成功导入！</h3>
+        <a href="{{ url_for('importer.import_page') }}" class="btn btn-primary" style="margin-top: 16px;">返回导入页面</a>
+    </div>
+    {% endif %}
+
+    {% endif %}
+    
 </div>
-{% else %}
-<div class="card" style="background: #d5f5e3; text-align: center; padding: 40px;">
-    <p style="font-size: 48px; margin-bottom: 16px;">🎉</p>
-    <h3>全部交易已成功导入！</h3>
-    <a href="{{ url_for('importer.import_page') }}" class="btn btn-primary" style="margin-top: 16px;">返回导入页面</a>
-</div>
-{% endif %}
 
-{% endif %}
+<!-- 其他导入预留 -->
+<div id="other" class="tab-content">
+    <div class="card" style="text-align: center; padding: 60px;">
+        <p style="font-size: 48px; margin-bottom: 16px;">🚧</p>
+        <h3>其他格式导入功能开发中</h3>
+        <p style="color: #888;">敬请期待</p>
+    </div>
+</div>
 
 <script>
     function closeResultModal() {
@@ -347,5 +367,13 @@
             form.style.display = 'none';
         }
     }
+    
+    function switchImportTab(tabName) {
+        document.querySelectorAll('.import-tabs .tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.import-tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector(`.import-tabs .tab[data-tab="${tabName}"]`).classList.add('active');
+        document.getElementById(tabName).classList.add('active');
+    }
+
 </script>
 {% endblock %}
