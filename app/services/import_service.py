@@ -319,7 +319,6 @@ class ImportService:
                 cat, combination_key = self._create_category_from_row(row, key)
                 
                 if combination_key in seen_combinations:
-                    db.session.rollback()
                     existing = Category.query.filter_by(
                         category_name=cat.category_name,
                         category_class=cat.category_class,
