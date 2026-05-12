@@ -141,7 +141,7 @@ if __name__ == '__main__':
     # 查询指定表（取消注释使用）
     # ==========================================
     
-    # query_table('transaction', limit=20)
+    query_table('transaction', limit=20)
     # query_table('account')
     # query_table('category')
     # query_table('owner')

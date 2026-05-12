@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
-from sqlalchemy import nullsfirst
+from sqlalchemy import nullsfirst, case
 from app import db
 from app.models import Account, AccountType, Owner, BluecoinsAccountMapping, Transaction
 
@@ -32,14 +32,27 @@ def list_accounts():
     if not owner:
         flash('请先设置个人信息')
         return redirect(url_for('transactions.dashboard'))
-    
+
+    type_order = case(
+        (Account.account_type == 'CASH', 1),
+        (Account.account_type == 'SAVING', 2),
+        (Account.account_type == 'TIME_DEPOSIT', 3),
+        (Account.account_type == 'CURRENCY_LINKED_DEPOSIT', 4),
+        (Account.account_type == 'FUND', 5),
+        (Account.account_type == 'INVESTMENT', 6),
+        (Account.account_type == 'MPF', 7),
+        (Account.account_type == 'CREDIT_CARD', 8),
+        (Account.account_type == 'MORTGAGE', 9),
+        else_=10
+    )
+
     if current_user.can_view_family_data():
         family_owner_ids = [o.owner_id for o in Owner.query.filter_by(family_id=owner.family_id).all()]
         accounts_list = Account.query.filter(
             Account.account_owner_id.in_(family_owner_ids)
         ).order_by(
             nullsfirst(Account.account_close_date),
-            Account.account_type,
+            type_order,
             Account.account_owner_id,
             Account.account_custodian,
             Account.account_currency_name,
@@ -51,7 +64,7 @@ def list_accounts():
             account_owner_id=owner.owner_id
         ).order_by(
             nullsfirst(Account.account_close_date),
-            Account.account_type,
+            type_order,
             Account.account_owner_id,
             Account.account_custodian,
             Account.account_currency_name,
