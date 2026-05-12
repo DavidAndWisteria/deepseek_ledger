@@ -91,9 +91,9 @@
             <thead>
                 <tr>
                     <th>类型</th>
+                    <th>拥有者</th>
                     <th>机构</th>
                     <th>货币</th>
-                    <th>拥有者</th>
                     <th>名称</th>
                     <th>别名</th>
                     <th>创建日期</th>
@@ -106,8 +106,6 @@
                 {% for account in accounts %}
                 <tr>
                     <td>{{ account.account_type.value }}</td>
-                    <td>{{ account.account_custodian }}</td>
-                    <td>{{ account.account_currency_name }}</td>
                     <td>
                         {{ account.owner.owner_name }}
                         {% if not account.owner.user %}
@@ -116,6 +114,8 @@
                             <span class="badge" style="background: #e94560; color: white;">我</span>
                         {% endif %}
                     </td>
+                    <td>{{ account.account_custodian }}</td>
+                    <td>{{ account.account_currency_name }}</td>
                     <td><strong>{{ account.account_name }}</strong></td>
                     <td>{{ account.account_other_name or '-' }}</td>
                     <td>{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '-' }}</td>

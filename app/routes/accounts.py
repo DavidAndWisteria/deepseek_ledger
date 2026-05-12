@@ -38,11 +38,11 @@ def list_accounts():
         accounts_list = Account.query.filter(
             Account.account_owner_id.in_(family_owner_ids)
         ).order_by(
-            nullsfirst(Account.account_close_date),  # 使用中（NULL）排前面
+            nullsfirst(Account.account_close_date),
             Account.account_type,
+            Account.account_owner_id,
             Account.account_custodian,
             Account.account_currency_name,
-            Account.account_owner_id,
             Account.account_name,
             Account.account_other_name
         ).all()
@@ -52,9 +52,9 @@ def list_accounts():
         ).order_by(
             nullsfirst(Account.account_close_date),
             Account.account_type,
+            Account.account_owner_id,
             Account.account_custodian,
             Account.account_currency_name,
-            Account.account_owner_id,
             Account.account_name,
             Account.account_other_name
         ).all()
