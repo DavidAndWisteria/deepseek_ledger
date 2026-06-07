@@ -141,7 +141,7 @@ if __name__ == '__main__':
     # 查询指定表（取消注释使用）
     # ==========================================
     
-    query_table('transaction', limit=20)
+    # query_table('transaction', limit=20)
     # query_table('account')
     # query_table('category')
     # query_table('owner')
@@ -153,7 +153,19 @@ if __name__ == '__main__':
     # ==========================================
     # 执行自定义 SQL（取消注释使用）
     # ==========================================
+
+    print("count transaction")
+    query_sql("SELECT count(*) FROM [transaction]")
+    print("count account")
+    query_sql("SELECT count(*) FROM account")
+    print("count account mapping")    
+    query_sql("SELECT count(*) FROM bluecoins_account_mapping")
+    print("show new mapping details")
+    query_sql("SELECT * FROM bluecoins_account_mapping WHERE is_manual = true")
+    query_sql("SELECT * FROM account WHERE account_id in (SELECT account_id FROM bluecoins_account_mapping WHERE is_manual = true)")
     
+
+    query_sql("SELECT count(*) FROM bluecoins_category_mapping")
     # query_sql("SELECT * FROM [transaction] WHERE trans_amount > 1000 LIMIT 10")
     # query_sql("SELECT category_type, COUNT(*) as cnt FROM category GROUP BY category_type")
 

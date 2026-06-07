@@ -174,7 +174,7 @@ def confirm_transactions():
                 bc_name = key.replace('new_account_', '')
                 if not bc_name or not value.strip():
                     continue
-                if bc_name in skipped_accounts:
+                if bc_name not in skipped_accounts:
                     account_name = value.strip()
                     if account_name:
                         other_name = request.form.get(f'new_acct_other_{bc_name}', '').strip() or None
