@@ -1,7 +1,7 @@
 import csv
 import io
-from flask import current_app
 from datetime import datetime, timezone
+from flask import current_app
 from app import db
 from app.models import (
     Account, Category, Transaction, Owner, Family,
@@ -18,34 +18,27 @@ class ImportService:
         self.owner = current_user.owner
         self.family_id = current_user.family_id
         
-        # 加载已有映射
-        self.account_map = {}   # bluecoins_name → account_id
-        self.category_map = {}  # (year, type, group, category, title) → category_id
+        self.account_map = {}
+        self.category_map = {}
         
         self._load_existing_mappings()
         
-        # 导入结果统计
         self.results = {
             'accounts': {'success': 0, 'skipped': 0, 'failed': 0, 'details': []},
             'categories': {'success': 0, 'skipped': 0, 'failed': 0, 'details': []},
             'transactions': {'success': 0, 'skipped': 0, 'failed': 0, 'details': []},
         }
         
-        # 跳过的交易
         self.skipped_transactions = []
-        
-        # 本次新建的映射
         self.new_account_mappings = {}
         self.new_category_mappings = {}
     
     def _load_existing_mappings(self):
         """加载已存在的 Bluecoins 映射"""
-        # 账户映射（全局）
         mappings = BluecoinsAccountMapping.query.all()
         for m in mappings:
             self.account_map[m.bluecoins_name] = m.account_id
         
-        # 分类映射（全局）
         cat_mappings = BluecoinsCategoryMapping.query.all()
         for m in cat_mappings:
             key = (m.bluecoins_year, m.bluecoins_type, m.bluecoins_group,
@@ -57,36 +50,36 @@ class ImportService:
         if not owner_name:
             return self.owner
         
-        # 1. 在当前家庭中按名称匹配
-        family_owners = Owner.query.filter_by(family_id=self.family_id).all()
-        for o in family_owners:
-            if o.owner_name == owner_name:
-                return o
+        owner_name = owner_name.strip()
         
-        # 2. 全局按名称匹配
+        if self.family_id:
+            family_owners = Owner.query.filter_by(family_id=self.family_id).all()
+            for o in family_owners:
+                if o.owner_name.strip() == owner_name:
+                    return o
+        
         matched = Owner.query.filter_by(owner_name=owner_name).first()
         if matched:
             return matched
         
-        # 3. 检查是否为家庭名
-        family = db.session.get(Family, self.family_id)
-        if family and family.family_name == owner_name:
-            family_owner = Owner.query.filter_by(
-                family_id=self.family_id,
-                owner_name=family.family_name
-            ).first()
-            if not family_owner:
-                family_owner = Owner(
-                    owner_name=family.family_name,
+        if self.family_id:
+            family = db.session.get(Family, self.family_id)
+            if family and family.family_name.strip() == owner_name:
+                family_owner = Owner.query.filter_by(
                     family_id=self.family_id,
-                    user_id=None
-                )
-                db.session.add(family_owner)
-                db.session.flush()
-            return family_owner
+                    owner_name=family.family_name
+                ).first()
+                if not family_owner:
+                    family_owner = Owner(
+                        owner_name=family.family_name,
+                        family_id=self.family_id,
+                        user_id=None
+                    )
+                    db.session.add(family_owner)
+                    db.session.flush()
+                return family_owner
         
-        # 4. 匹配不到
-        return None
+        return self.owner
     
     def import_accounts_csv(self, file_content):
         """导入账户 CSV"""
@@ -115,7 +108,7 @@ class ImportService:
                 self.results['accounts']['details'].append({
                     'name': bluecoins_name,
                     'status': 'skipped',
-                    'reason': f'id {bc_id} 重复，与已有账户相同'
+                    'reason': f'id {bc_id} 重复'
                 })
                 continue
             
@@ -142,30 +135,25 @@ class ImportService:
                     continue
                 
                 if combination_key in seen_combinations:
-                    existing = Account.query.filter_by(
-                        account_name=account.account_name,
-                        account_owner_id=account.account_owner_id
-                    ).first()
-                    if existing:
-                        mapping = BluecoinsAccountMapping(
-                            bluecoins_name=bluecoins_name,
-                            account_id=existing.account_id,
-                            is_manual=False
-                        )
-                        db.session.add(mapping)
-                        db.session.flush()
-                        self.account_map[bluecoins_name] = existing.account_id
-                        
-                        self.results['accounts']['skipped'] += 1
-                        self.results['accounts']['details'].append({
-                            'name': bluecoins_name,
-                            'status': 'skipped',
-                            'reason': '与已有账户重复'
-                        })
-                        
-                        if bc_id:
-                            seen_ids.add(bc_id)
-                        continue
+                    mapping = BluecoinsAccountMapping(
+                        bluecoins_name=bluecoins_name,
+                        account_id=account.account_id,
+                        is_manual=False
+                    )
+                    db.session.add(mapping)
+                    db.session.flush()
+                    self.account_map[bluecoins_name] = account.account_id
+                    
+                    self.results['accounts']['skipped'] += 1
+                    self.results['accounts']['details'].append({
+                        'name': bluecoins_name,
+                        'status': 'skipped',
+                        'reason': '与已有账户重复'
+                    })
+                    
+                    if bc_id:
+                        seen_ids.add(bc_id)
+                    continue
                 
                 mapping = BluecoinsAccountMapping(
                     bluecoins_name=bluecoins_name,
@@ -206,7 +194,6 @@ class ImportService:
         custodian = row.get('account_custodian', '').strip()
         currency = row.get('account_currency_name', '').strip()
         owner = row.get('account_owner', '').strip()
-        
         return not any([name, atype, custodian, currency, owner])
     
     def _create_account_from_row(self, row, bluecoins_name):
@@ -233,18 +220,15 @@ class ImportService:
         if not owner:
             return None, None
         
+        ao_name = account_other_name or ''
+        
         combination_key = (
-            account_name,
-            account_other_name or '',
-            account_type,
-            account_custodian,
-            account_currency,
-            owner.owner_id
+            account_name, ao_name, account_type,
+            account_custodian, account_currency, owner.owner_id
         )
         
         existing = Account.query.filter_by(
             account_name=account_name,
-            account_other_name=account_other_name,
             account_type=account_type,
             account_custodian=account_custodian,
             account_currency_name=account_currency,
@@ -252,18 +236,8 @@ class ImportService:
         ).first()
         
         if existing:
-            account = Account(
-                account_name=account_name,
-                account_other_name=account_other_name,
-                account_type=account_type,
-                account_create_date=create_date,
-                account_close_date=close_date,
-                account_custodian=account_custodian,
-                account_currency_name=account_currency,
-                account_owner_id=owner.owner_id
-            )
-            account.account_id = existing.account_id
-            return account, combination_key
+            existing._existing = True
+            return existing, combination_key
         
         account = Account(
             account_name=account_name,
@@ -319,33 +293,26 @@ class ImportService:
                 cat, combination_key = self._create_category_from_row(row, key)
                 
                 if combination_key in seen_combinations:
-                    existing = Category.query.filter_by(
-                        category_name=cat.category_name,
-                        category_class=cat.category_class,
-                        category_subclass=cat.category_subclass,
-                        category_type=cat.category_type
-                    ).first()
-                    if existing:
-                        mapping = BluecoinsCategoryMapping(
-                            bluecoins_year=year,
-                            bluecoins_type=bc_type,
-                            bluecoins_group=group,
-                            bluecoins_category=category_name,
-                            bluecoins_title=title,
-                            category_id=existing.category_id,
-                            is_manual=False
-                        )
-                        db.session.add(mapping)
-                        db.session.flush()
-                        self.category_map[key] = existing.category_id
-                        
-                        self.results['categories']['skipped'] += 1
-                        self.results['categories']['details'].append({
-                            'name': f'{group}/{category_name}/{title}',
-                            'status': 'skipped',
-                            'reason': '与已有分类重复'
-                        })
-                        continue
+                    mapping = BluecoinsCategoryMapping(
+                        bluecoins_year=year,
+                        bluecoins_type=bc_type,
+                        bluecoins_group=group,
+                        bluecoins_category=category_name,
+                        bluecoins_title=title,
+                        category_id=cat.category_id,
+                        is_manual=False
+                    )
+                    db.session.add(mapping)
+                    db.session.flush()
+                    self.category_map[key] = cat.category_id
+                    
+                    self.results['categories']['skipped'] += 1
+                    self.results['categories']['details'].append({
+                        'name': f'{group}/{category_name}/{title}',
+                        'status': 'skipped',
+                        'reason': '与已有分类重复'
+                    })
+                    continue
                 
                 mapping = BluecoinsCategoryMapping(
                     bluecoins_year=year,
@@ -386,7 +353,6 @@ class ImportService:
         cls = row.get('category_class', '').strip()
         subclass = row.get('category_subclass', '').strip()
         ctype = row.get('category_type', '').strip()
-        
         return not any([name, cls, subclass, ctype])
     
     def _create_category_from_row(self, row, key):
@@ -399,8 +365,6 @@ class ImportService:
         category_subclass = row.get('category_subclass', category_name).strip()
         category_type_str = row.get('category_type', 'E').strip()
         
-        # 映射 Bluecoins 类型到系统类型
-        # 优先使用 CSV 中的 category_type，否则按 Bluecoins 类型推断
         if category_type_str in ('I', 'E', 'T', 'S'):
             category_type = CategoryType(category_type_str)
         elif bc_type == '收入':
@@ -428,15 +392,7 @@ class ImportService:
         ).first()
         
         if existing:
-            cat = Category(
-                category_name=category_name_val,
-                category_other_name=category_other_name,
-                category_class=category_class,
-                category_subclass=category_subclass,
-                category_type=category_type
-            )
-            cat.category_id = existing.category_id
-            return cat, combination_key
+            return existing, combination_key
         
         cat = Category(
             category_name=category_name_val,
@@ -449,10 +405,15 @@ class ImportService:
         db.session.flush()
         return cat, combination_key
     
-    def import_transactions_csv(self, file_content, manual_mappings=None):
+    def import_transactions_csv(self, file_content, manual_mappings=None, 
+                                skipped_accounts=None, skipped_categories=None, dry_run=False):
         """导入交易 CSV"""
         if manual_mappings is None:
             manual_mappings = {'accounts': {}, 'categories': {}}
+        if skipped_accounts is None:
+            skipped_accounts = set()
+        if skipped_categories is None:
+            skipped_categories = set()
         
         self._apply_manual_mappings(manual_mappings)
         
@@ -465,10 +426,36 @@ class ImportService:
             if row.get('类型', '').strip() == '转账' and i in transfer_pairs.get('processed', set()):
                 continue
             
+            # 检查是否明确跳过
+            bc_account = row.get('账户', '').strip()
+            bc_group = row.get('类别分组名称', '').strip()
+            bc_category = row.get('类别', '').strip()
+            bc_title = row.get('标题', '').strip()
+            bc_type = row.get('类型', '').strip()
+            
+            if bc_account in skipped_accounts:
+                self.results['transactions']['skipped'] += 1
+                self.results['transactions']['details'].append({
+                    'row': i + 1, 'status': 'skipped',
+                    'reason': f'用户跳过账户: {bc_account}'
+                })
+                self.skipped_transactions.append(row)
+                continue
+            
+            cat_key_str = f"{bc_type}|||{bc_group}|||{bc_category}|||{bc_title}"
+            # 也检查五元组
+            cat_key_tuple = ('', bc_type, bc_group, bc_category, bc_title)
+            if cat_key_str in skipped_categories or cat_key_tuple in skipped_categories:
+                self.results['transactions']['skipped'] += 1
+                self.results['transactions']['details'].append({
+                    'row': i + 1, 'status': 'skipped',
+                    'reason': f'用户跳过分类: {bc_group}/{bc_category}/{bc_title}'
+                })
+                self.skipped_transactions.append(row)
+                continue
+            
             try:
-                result = self._import_single_transaction(
-                    row, rows, i, transfer_pairs, manual_mappings
-                )
+                result = self._import_single_transaction(row, rows, i, transfer_pairs)
                 
                 if result == 'success':
                     self.results['transactions']['success'] += 1
@@ -481,12 +468,11 @@ class ImportService:
                 db.session.rollback()
                 self.results['transactions']['failed'] += 1
                 self.results['transactions']['details'].append({
-                    'row': i + 1,
-                    'status': 'failed',
-                    'reason': str(e)
+                    'row': i + 1, 'status': 'failed', 'reason': str(e)
                 })
         
-        db.session.commit()
+        if not dry_run:
+            db.session.commit()
         return self.results['transactions']
     
     def _apply_manual_mappings(self, manual_mappings):
@@ -519,9 +505,9 @@ class ImportService:
                     self.category_map[key] = int(category_id)
         
         db.session.flush()
-    
+
     def _find_transfer_pairs(self, rows):
-        """查找转账配对"""
+        """查找转账配对（相邻、金额一正一负互为相反数）"""
         pairs = {}
         processed = set()
         
@@ -541,7 +527,7 @@ class ImportService:
         pairs['processed'] = processed
         return pairs
     
-    def _import_single_transaction(self, row, all_rows, index, transfer_pairs, manual_mappings):
+    def _import_single_transaction(self, row, all_rows, index, transfer_pairs):
         """导入单条交易"""
         bc_type = row.get('类型', '').strip()
         bc_account = row.get('账户', '').strip()
@@ -551,7 +537,6 @@ class ImportService:
         amount = float(row.get('金额', 0))
         currency = row.get('货币', 'HKD').strip()
         description = row.get('备注', '').strip()
-        bc_status = row.get('状态', '').strip()
         
         date_str = row.get('日期', '').strip()
         time_str = row.get('设置时间', '').strip()
@@ -560,10 +545,8 @@ class ImportService:
         account_id = self._match_account(bc_account)
         if not account_id:
             self.results['transactions']['details'].append({
-                'row': index + 1,
-                'status': 'skipped',
-                'reason': f'无法匹配账户: {bc_account}',
-                'title': title
+                'row': index + 1, 'status': 'skipped',
+                'reason': f'无法匹配账户: {bc_account}', 'title': title
             })
             return 'skipped'
         
@@ -574,24 +557,22 @@ class ImportService:
         
         if not category_id:
             self.results['transactions']['details'].append({
-                'row': index + 1,
-                'status': 'skipped',
-                'reason': f'无法匹配分类: {bc_group}/{bc_category}/{title}',
-                'title': title
+                'row': index + 1, 'status': 'skipped',
+                'reason': f'无法匹配分类: {bc_group}/{bc_category}/{title}', 'title': title
             })
             return 'skipped'
         
-        trans_status = TransactionStatus.VERIFIED if bc_status == '核对' else TransactionStatus.UNVERIFIED
+        trans_status = TransactionStatus.UNVERIFIED
         
         if bc_type == '转账' and index in transfer_pairs:
             return self._import_transfer_pair(
                 row, all_rows, index, transfer_pairs,
-                category_id, currency, trans_status, trans_datetime
+                category_id, currency, trans_status, trans_datetime, description
             )
         
         transaction = Transaction(
             trans_datetime=trans_datetime,
-            trans_desc=description or title,
+            trans_desc=description if description else '',
             trans_amount=amount,
             trans_currency_name=currency,
             trans_account_id=account_id,
@@ -602,15 +583,14 @@ class ImportService:
         db.session.add(transaction)
         return 'success'
     
-    def _import_transfer_pair(self, row, all_rows, index, transfer_pairs, category_id, currency, trans_status, trans_datetime):
-        """导入转账配对"""
+    def _import_transfer_pair(self, row, all_rows, index, transfer_pairs, category_id, currency, trans_status, trans_datetime, description):
+        """导入转账配对记录"""
         pair_index = transfer_pairs[index]
         pair_row = all_rows[pair_index]
         amount = float(row.get('金额', 0))
         pair_amount = float(pair_row.get('金额', 0))
         bc_account = row.get('账户', '').strip()
         pair_account = pair_row.get('账户', '').strip()
-        title = row.get('标题', '').strip()
         
         account_id = self._match_account(bc_account)
         pair_account_id = self._match_account(pair_account)
@@ -631,7 +611,7 @@ class ImportService:
         
         trans_out = Transaction(
             trans_datetime=trans_datetime,
-            trans_desc=title,
+            trans_desc=description if description else '',
             trans_amount=out_amount,
             trans_currency_name=currency,
             trans_account_id=out_account_id,
@@ -644,7 +624,7 @@ class ImportService:
         
         trans_in = Transaction(
             trans_datetime=trans_datetime,
-            trans_desc=title,
+            trans_desc=description if description else '',
             trans_amount=in_amount,
             trans_currency_name=currency,
             trans_account_id=in_account_id,
@@ -662,6 +642,7 @@ class ImportService:
         return 'transfer_pair'
     
     def _match_account(self, bluecoins_name):
+        print(f"DEBUG _match_account: looking for '{bluecoins_name}', in map={bluecoins_name in self.account_map}")
         """匹配账户，返回 account_id 或 None"""
         if bluecoins_name in self.account_map:
             return self.account_map[bluecoins_name]
@@ -694,6 +675,7 @@ class ImportService:
         return None
     
     def _match_category(self, bc_type, group, category_name, title, amount=None, account_name=None):
+        print(f"DEBUG _match_category: looking for {bc_type}/{group}/{category_name}/{title}")
         """匹配分类，返回 category_id 或 None"""
         for key, cat_id in {**self.category_map, **self.new_category_mappings}.items():
             year, bt, g, c, t = key
@@ -706,24 +688,16 @@ class ImportService:
                 if g == group and c == category_name and bt == bc_type:
                     return cat_id
         
-        cat = Category.query.filter_by(
-            category_name=title,
-            category_subclass=category_name
-        ).first()
-        
+        cat = Category.query.filter_by(category_name=title, category_subclass=category_name).first()
         if not cat:
             cat = Category.query.filter_by(category_name=title).first()
         
         if cat:
             try:
                 mapping = BluecoinsCategoryMapping(
-                    bluecoins_year='',
-                    bluecoins_type=bc_type,
-                    bluecoins_group=group,
-                    bluecoins_category=category_name,
-                    bluecoins_title=title,
-                    category_id=cat.category_id,
-                    is_manual=False
+                    bluecoins_year='', bluecoins_type=bc_type,
+                    bluecoins_group=group, bluecoins_category=category_name,
+                    bluecoins_title=title, category_id=cat.category_id, is_manual=False
                 )
                 db.session.add(mapping)
                 db.session.flush()
@@ -742,10 +716,8 @@ class ImportService:
             return cat.category_id
         
         cat = Category(
-            category_name='账户转账',
-            category_class='转账',
-            category_subclass='内部转账',
-            category_type=CategoryType.T
+            category_name='账户转账', category_class='转账',
+            category_subclass='内部转账', category_type=CategoryType.T
         )
         db.session.add(cat)
         db.session.flush()
@@ -755,43 +727,42 @@ class ImportService:
         """解析日期时间"""
         if not date_str:
             return datetime.now(timezone.utc)
-        
-        # 日期列已包含时间（格式：YYYY-MM-DD HH:MM:SS）
         try:
             return datetime.strptime(date_str.strip(), '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
         except ValueError:
-            pass
-        
-        # 日期列只有日期（格式：YYYY-MM-DD）
-        try:
-            dt = datetime.strptime(date_str.strip(), '%Y-%m-%d')
-            if time_str and time_str.strip():
-                try:
-                    t = datetime.strptime(time_str.strip(), '%H:%M').time()
-                    return datetime.combine(dt, t).replace(tzinfo=timezone.utc)
-                except ValueError:
-                    pass
-            return dt.replace(tzinfo=timezone.utc)
-        except ValueError:
-            return datetime.now(timezone.utc)
+            try:
+                dt = datetime.strptime(date_str.strip(), '%Y-%m-%d')
+                if time_str and time_str.strip():
+                    try:
+                        t = datetime.strptime(time_str.strip(), '%H:%M').time()
+                        return datetime.combine(dt, t).replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pass
+                return dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                return datetime.now(timezone.utc)
     
     def _parse_date(self, date_str):
         """解析日期，空值返回 None"""
         if not date_str or not date_str.strip():
             return None
+        date_str = date_str.strip().strip('"').strip()
         try:
-            return datetime.strptime(date_str.strip(), '%Y-%m-%d').date()
+            return datetime.strptime(date_str, '%Y-%m-%d').date()
         except ValueError:
             try:
-                return datetime.strptime(date_str.strip(), '%Y%m%d').date()
+                return datetime.strptime(date_str, '%Y%m%d').date()
             except ValueError:
-                return None
+                try:
+                    return datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S').date()
+                except ValueError:
+                    return None
     
     def get_skipped_transactions(self):
-        """获取跳过的交易列表（用于前端显示需要手动处理的交易）"""
+        """获取跳过的交易列表"""
         result = []
         seen_accounts = set()
-        seen_categories = {}  # key → 关联的账户列表
+        seen_categories = {}
         
         for row in self.skipped_transactions:
             bc_account = row.get('账户', '').strip()
@@ -805,8 +776,7 @@ class ImportService:
             
             if bc_type != '转账':
                 category_matched = self._match_category(
-                    bc_type, bc_group, bc_category, bc_title,
-                    account_name=bc_account
+                    bc_type, bc_group, bc_category, bc_title, account_name=bc_account
                 ) is not None
             
             reason = []
@@ -817,37 +787,28 @@ class ImportService:
                 reason.append('分类未匹配')
                 key = (bc_type, bc_group, bc_category, bc_title)
                 if key not in seen_categories:
-                    seen_categories[key] = {'accounts': set(), 'bc_type': bc_type, 'group': bc_group, 
+                    seen_categories[key] = {'accounts': set(), 'bc_type': bc_type, 'group': bc_group,
                                             'category': bc_category, 'title': bc_title}
                 seen_categories[key]['accounts'].add(bc_account)
             
             result.append({
                 'row': row,
                 'reason': ', '.join(reason) if reason else '未知',
-                'account': bc_account,
-                'group': bc_group,
-                'category': bc_category,
-                'title': bc_title,
-                'type': bc_type,
-                'amount': row.get('金额', '0'),
-                'date': row.get('日期', ''),
+                'account': bc_account, 'group': bc_group,
+                'category': bc_category, 'title': bc_title,
+                'type': bc_type, 'amount': row.get('金额', '0'), 'date': row.get('日期', ''),
             })
         
-        # 转换 seen_categories 为列表，附带账户信息
         missing_categories_list = []
         for key, data in seen_categories.items():
             missing_categories_list.append({
-                'key': key,
-                'bc_type': data['bc_type'],
-                'group': data['group'],
-                'category': data['category'],
-                'title': data['title'],
-                'accounts': list(data['accounts'])  # 关联的 Bluecoins 账户名
+                'key': key, 'bc_type': data['bc_type'], 'group': data['group'],
+                'category': data['category'], 'title': data['title'],
+                'accounts': list(data['accounts'])
             })
         
         return result, list(seen_accounts), missing_categories_list
     
-        
     def get_skipped_csv(self):
         """生成跳过交易的 CSV"""
         if not self.skipped_transactions:

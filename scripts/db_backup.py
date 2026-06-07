@@ -95,11 +95,11 @@ def restore(backup_name):
         return
     
     # 先备份当前数据库
-    if os.path.exists(DB_FILE):
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        pre_restore_backup = os.path.join(BACKUP_DIR, f'ledger_before_restore_{timestamp}.db')
-        shutil.copy2(DB_FILE, pre_restore_backup)
-        print(f'📦 已备份当前数据库: {os.path.basename(pre_restore_backup)}')
+    # if os.path.exists(DB_FILE):
+    #     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    #     pre_restore_backup = os.path.join(BACKUP_DIR, f'ledger_before_restore_{timestamp}.db')
+    #     shutil.copy2(DB_FILE, pre_restore_backup)
+    #     print(f'📦 已备份当前数据库: {os.path.basename(pre_restore_backup)}')
     
     # 恢复
     shutil.copy2(backup_file, DB_FILE)

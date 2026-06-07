@@ -6,6 +6,7 @@
 <!-- 筛选区域 -->
 <div class="card" style="margin-bottom: 20px;">
     <form method="GET" action="{{ url_for('transactions.dashboard') }}" id="filter-form">
+        <input type="hidden" name="tab" value="list-tab">
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; align-items: end;">
             <div class="form-group" style="margin-bottom: 0;">
                 <label>开始日期</label>
@@ -145,10 +146,8 @@
                 <div class="form-group">
                     <label>日期 *</label>
                     <div style="display: flex; gap: 8px;">
-                        <input type="date" id="trans_date" name="trans_date" 
-                               value="{{ start_date }}" required style="flex: 1;">
-                        <input type="time" id="trans_time" name="trans_time" 
-                               value="00:00" step="60" style="width: 120px;">
+                        <input type="date" id="trans_date" name="trans_date" value="{{ start_date }}" required style="flex: 1;">
+                        <input type="time" id="trans_time" name="trans_time" value="00:00" step="60" style="width: 120px;">
                         <button type="button" class="btn btn-sm" style="background: #d4e6f1; color: #2980b9; white-space: nowrap; height: 40px;" 
                                 onclick="setCurrentTime()" title="填入当前日期时间">🕐 现在</button>
                     </div>
@@ -168,7 +167,7 @@
 <!-- 交易列表 -->
 <div id="list-tab" class="tab-content {{ 'active' if active_tab == 'list-tab' else '' }}">
     <div class="card">
-        {% if transactions %}
+        {% if daily_sorted %}
         {% if unverified_count > 0 %}
         <div style="margin-bottom: 12px;">
             <form id="batch-form" method="POST" action="{{ url_for('transactions.batch_verify') }}">
@@ -181,8 +180,8 @@
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 36px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll()" style="width: 16px; height: 16px; cursor: pointer;"></th>
-                        <th>日期时间</th>
+                        <th style="width: 30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll()" style="width: 15px; height: 15px; cursor: pointer;"></th>
+                        <th>时间</th>
                         <th>类型</th>
                         <th>账户</th>
                         <th>分类</th>
@@ -193,14 +192,26 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for t in transactions %}
+                    {% for day in daily_sorted %}
+                    <tr style="background: #f0f2f5;">
+                        <td colspan="9" style="padding: 8px 12px; font-size: 13px; font-weight: 600;">
+                            <span>{{ day['date'].strftime('%Y-%m-%d') }} ({{ day['transactions']|length }} 笔)</span>
+                            {% if day['income'] > 0 %}
+                            <span class="text-income" style="margin-left: 16px;">📥 收入: ${{ "%.2f"|format(day['income']) }}</span>
+                            {% endif %}
+                            {% if day['expense'] > 0 %}
+                            <span class="text-expense" style="margin-left: 16px;">📤 支出: ${{ "%.2f"|format(day['expense']) }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% for t in day['transactions'] %}
                     <tr>
                         <td style="text-align: center;">
                             {% if t.trans_status.value == 'UNVERIFIED' %}
                             <input type="checkbox" name="trans_ids" value="{{ t.trans_id }}" class="trans-checkbox" form="batch-form" style="width: 15px; height: 15px; cursor: pointer;">
                             {% endif %}
                         </td>
-                        <td style="white-space: nowrap;">{{ t.trans_datetime.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td style="white-space: nowrap;">{{ t.trans_datetime.strftime('%H:%M') }}</td>
                         <td>
                             {% if t.is_income() %}
                                 <span class="badge badge-income">收入</span>
@@ -210,14 +221,19 @@
                                 <span class="badge badge-transfer">转账</span>
                             {% endif %}
                         </td>
-                        <td>{{ t.account_rel.account_name }}</td>
-                        <td>{{ t.category_rel.category_name }}</td>
+                        <td style="font-size: 12px;">{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.account_name }}</td>
+                        <td style="font-size: 12px;">{{ t.category_rel.category_class }} › {{ t.category_rel.category_name }}</td>
                         <td>
                             <span class="{{ 'text-income' if t.trans_amount > 0 else 'text-expense' }}">
                                 ${{ "%.2f"|format(t.trans_amount) }}
                             </span>
                         </td>
-                        <td>{{ t.trans_desc or '-' }}</td>
+                        <td style="text-align: center;">
+                            {% if t.trans_desc %}
+                            <span style="cursor: pointer; color: #3498db; font-size: 14px;" onclick="toggleNote(this)" title="点击查看备注">📝</span>
+                            <span style="display: none; font-size: 11px; color: #888; margin-left: 4px;">{{ t.trans_desc }}</span>
+                            {% endif %}
+                        </td>
                         <td>
                             <span class="badge" style="
                                 {% if t.trans_status.value == 'UNVERIFIED' %}background: #fef3cd; color: #856404;
@@ -225,20 +241,18 @@
                                 {% elif t.trans_status.value == 'FLAGGED' %}background: #f8d7da; color: #721c24;
                                 {% elif t.trans_status.value == 'RECONCILED' %}background: #cce5ff; color: #004085;
                                 {% endif %}">
-                                {% if t.trans_status.value == 'UNVERIFIED' %}⚠ 未核对
-                                {% elif t.trans_status.value == 'VERIFIED' %}✓ 已核对
-                                {% elif t.trans_status.value == 'FLAGGED' %}⚑ 有疑问
-                                {% elif t.trans_status.value == 'RECONCILED' %}✓✓ 已对账
+                                {% if t.trans_status.value == 'UNVERIFIED' %}⚠
+                                {% elif t.trans_status.value == 'VERIFIED' %}✓
+                                {% elif t.trans_status.value == 'FLAGGED' %}⚑
+                                {% elif t.trans_status.value == 'RECONCILED' %}✓✓
                                 {% endif %}
                             </span>
                         </td>
                         <td style="white-space: nowrap;">
-                            {# 编辑 #}
                             <button type="button" class="btn-action" style="background: #d4e6f1; color: #2980b9;"
-                                    onclick="openEditModal({{ t.trans_id }}, '{{ t.trans_datetime.strftime('%Y-%m-%d') }}', '{{ t.trans_datetime.strftime('%H:%M') }}', {{ t.trans_account_id }}, {{ t.trans_category_id }}, {{ t.trans_amount|abs }}, `{{ t.trans_desc or '' }}`)"
-                                    title="编辑">✏️</button>
+                                    onclick="openDetailModal('{{ t.trans_datetime.strftime('%Y-%m-%d %H:%M') }}', '{{ '收入' if t.is_income() else '支出' if t.is_expense() else '转账' }}', '{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.account_name }}', '{{ t.category_rel.category_class }} › {{ t.category_rel.category_name }}', '{{ '%.2f'|format(t.trans_amount) }}', `{{ t.trans_desc or '' }}`, '{{ t.trans_status.value }}', {{ t.trans_id }}, {{ t.trans_account_id }}, {{ t.trans_category_id }}, {{ t.trans_amount|abs }})"
+                                    title="查看详情">📋</button>
                             
-                            {# 核对/取消核对 #}
                             {% if t.trans_status.value == 'UNVERIFIED' %}
                             <form method="POST" action="{{ url_for('transactions.update_status', trans_id=t.trans_id, status='VERIFIED') }}" style="display: inline;">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -256,7 +270,6 @@
                             </form>
                             {% endif %}
                             
-                            {# 标记/取消标记 #}
                             {% if t.trans_status.value != 'FLAGGED' %}
                             <form method="POST" action="{{ url_for('transactions.update_status', trans_id=t.trans_id, status='FLAGGED') }}" style="display: inline;">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -264,15 +277,14 @@
                             </form>
                             {% endif %}
                             
-                            {# 删除 #}
-                            <form method="POST" action="{{ url_for('transactions.delete_transaction', trans_id=t.trans_id) }}" 
-                                  style="display: inline;"
+                            <form method="POST" action="{{ url_for('transactions.delete_transaction', trans_id=t.trans_id) }}" style="display: inline;"
                                   onsubmit="return confirm('确定删除此交易？');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="btn-action" style="background: #f5b7b1; color: #922b21;" title="删除">🗑</button>
+                                <button type="submit" class="btn-action" style="background: #f5b7b1; color: #922b21;">🗑</button>
                             </form>
                         </td>
                     </tr>
+                    {% endfor %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -286,60 +298,13 @@
     </div>
 </div>
 
-<!-- 编辑交易弹窗 -->
-<div id="edit-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
-    <div class="card" style="max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
-        <h3>✏️ 编辑交易</h3>
-        <form id="edit-form" method="POST">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            
-            <div class="form-row">
-                <div class="form-group">
-                    <label>账户</label>
-                    <select id="edit-account-id" name="account_id" required>
-                        {% for account in accounts %}
-                        <option value="{{ account.account_id }}">
-                            {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>分类</label>
-                    <select id="edit-category-id" name="category_id" required>
-                        {% for cat in categories %}
-                        <option value="{{ cat.category_id }}">
-                            {{ cat.category_class }} › {{ cat.category_subclass or '-' }} › {{ cat.category_name }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </div>
-            
-            <div class="form-row">
-                <div class="form-group">
-                    <label>金额</label>
-                    <input type="number" id="edit-amount" name="amount" step="0.01" min="0.01" required>
-                </div>
-                <div class="form-group">
-                    <label>日期</label>
-                    <div style="display: flex; gap: 8px;">
-                        <input type="date" id="edit-date" name="trans_date" required style="flex: 1;">
-                        <input type="time" id="edit-time" name="trans_time" step="60" style="width: 120px;">
-                    </div>
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label>备注</label>
-                <input type="text" id="edit-description" name="description" maxlength="500">
-            </div>
-            
-            <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <button type="submit" class="btn btn-primary">💾 保存</button>
-                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
-            </div>
-        </form>
+<!-- 交易详情弹窗 -->
+<div id="detail-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center;">
+    <div class="card" style="max-width: 500px; width: 90%;">
+        <h3>📋 交易详情</h3>
+        <div id="detail-content" style="line-height: 2; font-size: 14px;"></div>
+        <div id="detail-actions" style="display: flex; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee;"></div>
+        <button type="button" class="btn btn-secondary" style="width: 100%; margin-top: 12px;" onclick="closeDetailModal()">关闭</button>
     </div>
 </div>
 
@@ -355,12 +320,12 @@
         vertical-align: middle;
         transition: all 0.15s;
     }
-    .btn-action:hover {
-        filter: brightness(0.9);
-    }
+    .btn-action:hover { filter: brightness(0.9); }
 </style>
 
 <script>
+    var currentDetailTransId = null;
+    
     function onTypeChange() {
         const transType = document.getElementById('trans_type').value;
         const toAccountGroup = document.getElementById('to-account-group');
@@ -422,39 +387,88 @@
         document.getElementById('trans_time').value = hours + ':' + minutes;
     }
     
-    function openEditModal(transId, date, time, accountId, categoryId, amount, desc) {
-        document.getElementById('edit-form').action = '/edit/' + transId;
-        document.getElementById('edit-date').value = date;
-        document.getElementById('edit-time').value = time;
-        document.getElementById('edit-amount').value = amount;
-        document.getElementById('edit-description').value = desc;
-        
-        const accountSelect = document.getElementById('edit-account-id');
-        for (let i = 0; i < accountSelect.options.length; i++) {
-            if (accountSelect.options[i].value == accountId) {
-                accountSelect.selectedIndex = i;
-                break;
-            }
+    function toggleNote(el) {
+        const note = el.nextElementSibling;
+        if (note.style.display === 'none') {
+            note.style.display = 'inline';
+        } else {
+            note.style.display = 'none';
         }
-        
-        const categorySelect = document.getElementById('edit-category-id');
-        for (let i = 0; i < categorySelect.options.length; i++) {
-            if (categorySelect.options[i].value == categoryId) {
-                categorySelect.selectedIndex = i;
-                break;
-            }
-        }
-        
-        document.getElementById('edit-modal').style.display = 'flex';
     }
     
-    function closeEditModal() {
-        document.getElementById('edit-modal').style.display = 'none';
+    function openDetailModal(datetime, type, account, category, amount, desc, status, transId, accountId, categoryId, absAmount) {
+        currentDetailTransId = transId;
+        
+        const statusMap = {
+            'UNVERIFIED': '⚠ 未核对',
+            'VERIFIED': '✓ 已核对',
+            'FLAGGED': '⚑ 有疑问',
+            'RECONCILED': '✓✓ 已对账'
+        };
+        
+        document.getElementById('detail-content').innerHTML = `
+            <div><strong>日期时间:</strong> ${datetime}</div>
+            <div><strong>类型:</strong> ${type}</div>
+            <div><strong>账户:</strong> ${account}</div>
+            <div><strong>分类:</strong> ${category}</div>
+            <div><strong>金额:</strong> $${amount}</div>
+            <div><strong>备注:</strong> ${desc || '无'}</div>
+            <div><strong>状态:</strong> ${statusMap[status] || status}</div>
+        `;
+        
+        // 操作按钮
+        let actionsHtml = '';
+        actionsHtml += `<form method="POST" action="/edit/${transId}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="account_id" value="${accountId}">
+            <input type="hidden" name="category_id" value="${categoryId}">
+            <input type="hidden" name="amount" value="${absAmount}">
+            <input type="hidden" name="trans_date" value="${datetime.split(' ')[0]}">
+            <input type="hidden" name="trans_time" value="${datetime.split(' ')[1] || '00:00'}">
+            <button type="submit" class="btn-action" style="background:#d4e6f1;color:#2980b9;">✏️ 编辑</button>
+        </form>`;
+        
+        if (status === 'UNVERIFIED') {
+            actionsHtml += `<form method="POST" action="/status/${transId}/VERIFIED" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-action" style="background:#d5f5e3;color:#27ae60;">✓ 核对</button>
+            </form>`;
+        } else if (status === 'VERIFIED') {
+            actionsHtml += `<form method="POST" action="/status/${transId}/UNVERIFIED" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-action" style="background:#fef9e7;color:#b7950b;">↩ 取消核对</button>
+            </form>`;
+        } else if (status === 'FLAGGED') {
+            actionsHtml += `<form method="POST" action="/status/${transId}/UNVERIFIED" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-action" style="background:#eaecee;color:#5d6d7e;">↩ 取消标记</button>
+            </form>`;
+        }
+        
+        if (status !== 'FLAGGED') {
+            actionsHtml += `<form method="POST" action="/status/${transId}/FLAGGED" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-action" style="background:#fadbd8;color:#e74c3c;">⚑ 标记</button>
+            </form>`;
+        }
+        
+        actionsHtml += `<form method="POST" action="/delete/${transId}" style="display:inline;" onsubmit="return confirm('确定删除此交易？');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn-action" style="background:#f5b7b1;color:#922b21;">🗑 删除</button>
+        </form>`;
+        
+        document.getElementById('detail-actions').innerHTML = actionsHtml;
+        document.getElementById('detail-modal').style.display = 'flex';
+    }
+    
+    function closeDetailModal() {
+        document.getElementById('detail-modal').style.display = 'none';
+        currentDetailTransId = null;
     }
     
     window.onclick = function(event) {
-        if (event.target == document.getElementById('edit-modal')) {
-            closeEditModal();
+        if (event.target == document.getElementById('detail-modal')) {
+            closeDetailModal();
         }
     }
     
