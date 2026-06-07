@@ -55,6 +55,9 @@ def create_app():
     from app.routes.importer import importer as importer_blueprint
     app.register_blueprint(importer_blueprint)
 
+    from app.routes.data_manager import data_manager as data_manager_blueprint
+    app.register_blueprint(data_manager_blueprint)
+
     # 创建数据库表
     with app.app_context():
         from app import models

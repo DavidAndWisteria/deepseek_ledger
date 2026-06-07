@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 style="margin-bottom: 20px; color: #1a1a2e;">🗄️ 数据管理</h1>
+
+<!-- 标签页 -->
+<div class="tabs">
+    <div class="tab {{ 'active' if active_tab == 'backup' else '' }}" data-tab="backup" onclick="switchTab('backup')">💾 数据备份</div>
+    <div class="tab {{ 'active' if active_tab == 'query' else '' }}" data-tab="query" onclick="switchTab('query')">🔍 数据库查询</div>
+</div>
+
+<!-- 数据备份 -->
+<div id="backup" class="tab-content {{ 'active' if active_tab == 'backup' else '' }}">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <!-- 创建备份 -->
+        <div class="card">
+            <h3>📦 创建备份</h3>
+            <p style="color: #888; font-size: 13px; margin-bottom: 16px;">备份当前数据库到 instance/backups/ 目录</p>
+            <form method="POST" action="{{ url_for('data_manager.create_backup') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-primary" style="width: 100%;">📤 立即备份</button>
+            </form>
+        </div>
+
+        <!-- 备份列表 -->
+        <div class="card">
+            <h3>📋 备份列表 ({{ backups|length }})</h3>
+            {% if backups %}
+            <div style="max-height: 300px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>文件名</th>
+                            <th>大小</th>
+                            <th>时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in backups %}
+                        <tr>
+                            <td style="font-size: 12px;">{{ b.filename }}</td>
+                            <td>{{ b.size }}</td>
+                            <td style="font-size: 12px;">{{ b.mtime }}</td>
+                            <td style="white-space: nowrap;">
+                                <form method="POST" action="{{ url_for('data_manager.restore_backup') }}" style="display: inline;"
+                                      onsubmit="return confirm('确定要从此备份恢复数据库？当前数据将被覆盖。');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="backup_name" value="{{ b.filename }}">
+                                    <button type="submit" class="btn btn-sm" style="background: #27ae60; color: white; font-size: 11px;">↩ 恢复</button>
+                                </form>
+                                <form method="POST" action="{{ url_for('data_manager.delete_backup') }}" style="display: inline;"
+                                      onsubmit="return confirm('确定删除此备份？');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="backup_name" value="{{ b.filename }}">
+                                    <button type="submit" class="btn btn-danger btn-sm">🗑</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p style="color: #888; text-align: center; padding: 20px;">暂无备份</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 数据库查询 -->
+<div id="query" class="tab-content {{ 'active' if active_tab == 'query' else '' }}">
+    <div class="card" style="margin-bottom: 20px;">
+        <h3>🔍 SQL 查询</h3>
+        <form method="POST" action="{{ url_for('data_manager.execute_query') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <textarea name="sql" rows="4" style="width: 100%; font-family: monospace; font-size: 13px; padding: 10px;" 
+                          placeholder="输入 SQL 语句...">{{ query_sql or '' }}</textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">▶ 执行查询</button>
+        </form>
+    </div>
+
+    <!-- 示例 SQL -->
+    <div class="card" style="background: #f8f9fa; margin-bottom: 20px;">
+        <h4 style="margin-bottom: 12px;">📋 示例 SQL</h4>
+        <div style="font-family: monospace; font-size: 12px; line-height: 2;">
+            <div style="margin-bottom: 8px;">
+                <strong>查看所有表及行数：</strong><br>
+                <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px;">SELECT * FROM sqlite_master WHERE type='table'</code>
+            </div>
+            <div style="margin-bottom: 8px;">
+                <strong>查询指定表（最近 20 条）：</strong><br>
+                <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px;">SELECT * FROM [transaction] ORDER BY trans_datetime DESC LIMIT 20</code>
+            </div>
+            <div style="margin-bottom: 8px;">
+                <strong>统计交易笔数：</strong><br>
+                <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px;">SELECT trans_status, COUNT(*) as cnt FROM [transaction] GROUP BY trans_status</code>
+            </div>
+            <div style="margin-bottom: 8px;">
+                <strong>查看账户列表：</strong><br>
+                <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px;">SELECT * FROM account</code>
+            </div>
+            <div>
+                <strong>查看分类列表：</strong><br>
+                <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px;">SELECT * FROM category ORDER BY category_type, category_class</code>
+            </div>
+        </div>
+    </div>
+
+    <!-- 查询结果 -->
+    {% if query_result is defined %}
+    <div class="card">
+        <h4>📊 查询结果 (显示 {{ query_result.displayed }} / 共 {{ query_result.total }} 条)</h4>
+        {% if query_result.rows %}
+        <div style="overflow-x: auto; max-height: 400px; overflow-y: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        {% for col in query_result.columns %}
+                        <th>{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in query_result.rows %}
+                    <tr>
+                        {% for val in row %}
+                        <td style="font-size: 12px;">{{ val if val is not none else '' }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p style="color: #888; text-align: center; padding: 20px;">查询无结果</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector(`.tab[data-tab="${tabName}"]`).classList.add('active');
+        document.getElementById(tabName).classList.add('active');
+    }
+</script>
+{% endblock %}
