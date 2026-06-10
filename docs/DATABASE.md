@@ -27,9 +27,9 @@
                     │   │ Category │ │TimeDeposit   │
                     │   └──────────┘ └──────────────┘
                     │
-              ┌─────┴──────────┐
-              │CurrencyConversion│
-              └────────────────┘
+              ┌─────┴──────────┬──────────────────┐
+              │CurrencyConversion│BluecoinsMappings│
+              └────────────────┘──────────────────┘
 ```
 
 ---
@@ -252,6 +252,36 @@ UNVERIFIED ──核对──→ VERIFIED
 
 ---
 
+### 10. BluecoinsAccountMapping（Bluecoins 账户映射表）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| bluecoins_name | VARCHAR(200) | PRIMARY KEY | Bluecoins 原始账户名 |
+| account_id | INTEGER | FOREIGN KEY → account.account_id, NOT NULL | 映射到的系统账户 |
+| is_manual | BOOLEAN | DEFAULT FALSE | 是否为手动映射 |
+| created_at | DATETIME | DEFAULT UTC_TIMESTAMP | 创建时间 |
+
+**说明**: 将 Bluecoins 导出的账户名称映射到系统 Account。导入账户 CSV 或手动映射时自动创建。
+
+---
+
+### 11. BluecoinsCategoryMapping（Bluecoins 分类映射表）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| bluecoins_year | VARCHAR(4) | PRIMARY KEY (联合) | Bluecoins 年份 |
+| bluecoins_type | VARCHAR(10) | PRIMARY KEY (联合) | Bluecoins 类型：收入/支出/转账 |
+| bluecoins_group | VARCHAR(100) | PRIMARY KEY (联合) | Bluecoins 类别分组名称 |
+| bluecoins_category | VARCHAR(100) | PRIMARY KEY (联合) | Bluecoins 类别 |
+| bluecoins_title | VARCHAR(200) | PRIMARY KEY (联合) | Bluecoins 标题 |
+| category_id | INTEGER | FOREIGN KEY → category.category_id, NOT NULL | 映射到的系统分类 |
+| is_manual | BOOLEAN | DEFAULT FALSE | 是否为手动映射 |
+| created_at | DATETIME | DEFAULT UTC_TIMESTAMP | 创建时间 |
+
+**说明**: 五元组联合主键 `(year, type, group, category, title)` 唯一标识 Bluecoins 分类，映射到系统 Category。手动映射（`is_manual=True`）会自动覆盖同 `(type, group, category, title)` 的自动映射。
+
+---
+
 ## 数据权限模型
 
 ```
@@ -302,11 +332,12 @@ Family (家庭)
 
 ## 开发数据库隔离
 
-- **开发环境**：`instance/ledger.db`
-- **测试环境**：临时文件（每次测试自动创建和删除）
-- **pytest 启动时**：自动备份 `ledger.db` → `ledger.db.backup`
-- **pytest 结束时**：自动恢复 `ledger.db.backup` → `ledger.db`
+- **开发环境**: `instance/ledger.db`
+- **测试环境**: 临时文件（每次测试自动创建和删除）
+- **隔离机制**: `create_app(test_config={...})` 在 `db.init_app()` 之前注入临时 DB URI，确保 SQLAlchemy engine 绑定到临时数据库而非开发数据库
+- **pytest 启动时**: 自动备份 `ledger.db` → `ledger.db.backup`
+- **pytest 结束时**: 自动恢复 `ledger.db.backup` → `ledger.db`
 
 ---
 
-**最后更新**：2026年5月5日
+**最后更新**：2026年6月10日

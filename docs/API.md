@@ -488,6 +488,175 @@ POST /family/reset-password/<int:owner_id>
 
 ---
 
+## 数据导入接口 (Bluecoins)
+
+### 导入页面
+
+```http
+GET /import
+```
+
+**说明**: 需登录状态。三步式导入流程（账户 → 分类 → 交易）。
+
+---
+
+### 导入账户 CSV
+
+```http
+POST /import/accounts
+```
+
+**说明**: 需登录状态。上传 Bluecoins 导出的账户 CSV，自动创建 `Account` 和 `BluecoinsAccountMapping` 记录。
+
+**参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| file | file | 是 | CSV 文件（UTF-8 编码） |
+
+**CSV 列**: 账户, id, account_name, account_other_name, account_type, account_create_date, account_close_date, account_custodian, account_currency_name, account_owner
+
+**去重规则**: 已有映射名/重复 id/空行/重复组合（名称+类型+机构+货币+拥有者）
+
+---
+
+### 导入分类 CSV
+
+```http
+POST /import/categories
+```
+
+**说明**: 需登录状态。上传 Bluecoins 导出的分类 CSV，自动创建 `Category` 和 `BluecoinsCategoryMapping` 记录。
+
+**参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| file | file | 是 | CSV 文件（UTF-8 编码） |
+
+**CSV 列**: 年份, 类型, 类别分组名称, 类别, 标题, 总金额, 总笔数, category_id, category_name, category_other_name, category_class, category_subclass, category_type
+
+**映射 key**: `(bluecoins_year, bluecoins_type, bluecoins_group, bluecoins_category, bluecoins_title)` — 五元组联合唯一
+
+---
+
+### 上传交易 CSV 预览
+
+```http
+POST /import/transactions/upload
+```
+
+**说明**: 需登录状态。上传交易 CSV 进行预览（dry-run），展示匹配成功的交易和需要手动处理的未匹配项。所有操作在 savepoint 中执行后回滚，不会写入数据库。
+
+**参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| file | file | 是 | CSV 文件（UTF-8 编码） |
+
+**CSV 列**: 类型, 日期, 设置时间, 标题, 金额, 货币, 汇率, 类别分组名称, 类别, 账户, 备注, 标签, 状态
+
+**响应**: 导入预览页面，含:
+- 汇总统计（成功/需处理/失败）
+- 未匹配账户列表（可选已有账户或创建新账户）
+- 未匹配分类列表（可选已有分类或创建新分类，含别名/大类/子类/类型）
+- 跳过交易明细表
+
+---
+
+### 确认导入交易
+
+```http
+POST /import/transactions/confirm
+```
+
+**说明**: 需登录状态。处理手动映射的表单数据，创建新账户/分类及映射记录，然后正式导入交易。
+
+**参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| map_account_* | int | 否 | 手动映射的账户 ID |
+| map_category_* | int | 否 | 手动映射的分类 ID（5 段 `|||` 分隔 key） |
+| new_account_* | string | 否 | 新建账户名称 |
+| new_acct_type_* | string | 否 | 新建账户类型 |
+| new_acct_custodian_* | string | 否 | 新建账户机构 |
+| new_acct_currency_* | string | 否 | 新建账户货币 |
+| new_acct_owner_* | int | 否 | 新建账户拥有者 |
+| new_category_* | string | 否 | 新建分类名称 |
+| new_cat_class_* | string | 否 | 新建分类大类 |
+| new_cat_subclass_* | string | 否 | 新建分类子类 |
+| new_cat_other_* | string | 否 | 新建分类别名 |
+| new_cat_type_* | string | 否 | 新建分类类型（I/E/T/S） |
+| skip_unmatched | int | 否 | 设为 1 则仅导入已匹配的交易 |
+
+**分类映射 key 格式**: `year|||type|||group|||category|||title`（5 段 `|||` 分隔，年份从交易日期提取）
+
+**成功响应**: 重定向到导入页面，Flash 显示导入统计
+
+---
+
+### 下载跳过的交易
+
+```http
+GET /import/download-skipped
+```
+
+**说明**: 需登录状态。下载上次导入中被跳过的交易 CSV。
+
+**响应**: CSV 文件下载（`Content-Disposition: attachment`）
+
+---
+
+## 数据管理接口
+
+### 数据管理页面
+
+```http
+GET /data
+```
+
+**说明**: 需登录状态。数据库备份、恢复、手动 SQL 查询功能。
+
+---
+
+### 备份数据库
+
+```http
+POST /data/backup
+```
+
+**说明**: 需登录状态。将当前数据库备份到 `instance/backups/` 目录。
+
+---
+
+### 恢复数据库
+
+```http
+POST /data/restore
+```
+
+**说明**: 需登录状态。从备份文件恢复数据库（会覆盖当前数据）。
+
+---
+
+### 执行查询
+
+```http
+POST /data/query
+```
+
+**说明**: 需登录状态。执行手动 SQL 查询（SELECT 或 UPDATE/DELETE）。
+
+**参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| sql | string | 是 | SQL 语句 |
+| csrf_token | string | 是 | CSRF 令牌 |
+
+---
+
 ## 常用筛选组合示例
 
 ### 查看本月所有未核对交易
@@ -551,4 +720,4 @@ GET /?start_date=2026-05-01&end_date=2026-05-31&status=UNVERIFIED&category_id=2&
 
 ---
 
-**最后更新**：2026年5月5日
+**最后更新**：2026年6月10日

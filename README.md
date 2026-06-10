@@ -1,9 +1,9 @@
 # 💰 Personal Ledger - 个人财务管理系统
 
-![Version](https://img.shields.io/badge/version-0.1.2-blue)
+![Version](https://img.shields.io/badge/version-0.2.8-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
-![Tests](https://img.shields.io/badge/tests-70%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-105%20passed-brightgreen)
 
 一个安全、轻量级的个人及家庭财务管理应用，支持收支记录、转账、分类统计、状态核对等功能。
 
@@ -15,9 +15,10 @@
 - ✅ **状态核对**：交易状态管理（未核对/已核对/有疑问），支持批量核对
 - 📈 **数据统计**：按日期、分类、账户、状态等维度筛选统计
 - 🎨 **界面友好**：响应式设计，浅色调UI，支持移动端访问
+- 💾 **数据导入**：支持 Bluecoins CSV 导入（账户/分类/交易），预览与手动映射，自动去重
 - 💾 **本地运行**：SQLite数据库，无需额外配置，启动自动迁移
 - 🚀 **轻量高效**：Flask框架，资源占用低
-- 🧪 **测试完善**：70个测试用例，测试与开发环境完全隔离
+- 🧪 **测试完善**：105个测试用例，测试与开发环境完全隔离
 
 ## 🚀 快速开始
 
@@ -149,14 +150,19 @@ python run.py
 deepseek_ledger/
 ├── app/                          # 应用主目录
 │   ├── __init__.py               # 应用初始化（含数据库自动迁移）
-│   ├── models.py                 # 数据库模型（9个表）
+│   ├── models.py                 # 数据库模型（11个表）
 │   ├── routes/                   # 路由模块
 │   │   ├── __init__.py
 │   │   ├── auth.py              # 认证（注册/登录/登出）
 │   │   ├── transactions.py      # 交易（CRUD/状态管理/批量核对）
 │   │   ├── accounts.py          # 账户管理
 │   │   ├── categories.py        # 分类管理
-│   │   └── family.py            # 家庭管理
+│   │   ├── family.py            # 家庭管理
+│   │   ├── importer.py          # Bluecoins 数据导入
+│   │   ├── data_manager.py      # 数据备份/恢复/查询
+│   │   └── records.py           # 历史记录（deprecated）
+│   ├── services/                 # 业务逻辑
+│   │   └── import_service.py    # 导入引擎（解析/匹配/创建）
 │   └── templates/                # HTML模板
 │       ├── base.html            # 基础布局
 │       ├── login.html           # 登录页
@@ -164,15 +170,19 @@ deepseek_ledger/
 │       ├── dashboard.html       # 仪表盘（筛选/统计/交易）
 │       ├── accounts.html        # 账户管理
 │       ├── categories.html      # 分类管理
-│       └── family.html          # 家庭管理
-├── tests/                        # 测试目录（70个用例）
-│   ├── conftest.py              # 测试配置（数据库隔离）
-│   ├── test_models.py           # 模型测试（19个）
-│   ├── test_auth.py             # 认证测试（10个）
-│   ├── test_accounts.py         # 账户测试（6个）
-│   ├── test_categories.py       # 分类测试（7个）
-│   ├── test_transactions.py     # 交易测试（20个）
-│   └── test_family.py           # 家庭测试（8个）
+│       ├── family.html          # 家庭管理
+│       ├── import.html          # 数据导入
+│       └── data_manager.html    # 数据管理
+├── tests/                        # 测试目录（105个用例）
+│   ├── conftest.py              # 测试配置（临时数据库隔离）
+│   ├── test_models.py           # 模型测试
+│   ├── test_auth.py             # 认证测试
+│   ├── test_accounts.py         # 账户测试
+│   ├── test_categories.py       # 分类测试
+│   ├── test_transactions.py     # 交易测试
+│   ├── test_family.py           # 家庭测试
+│   ├── test_import_account.py   # 导入账户测试
+│   └── test_import_category.py  # 导入分类测试
 ├── docs/                         # 文档目录
 ├── .env.example                  # 环境变量模板
 ├── .gitignore                    # Git忽略文件
@@ -197,6 +207,8 @@ deepseek_ledger/
 | account | 账户 | account_id, account_type, account_custodian |
 | category | 分类 | category_id, category_type(I/E/T/S) |
 | transaction | 交易 | trans_id, trans_amount, trans_status |
+| bluecoins_account_mapping | 账户映射 | bluecoins_name, account_id, is_manual |
+| bluecoins_category_mapping | 分类映射 | 五元组(year/type/group/category/title), category_id, is_manual |
 
 ### 交易状态
 
@@ -258,6 +270,26 @@ deepseek_ledger/
 | POST | /family/delete-member/\<id\> | 删除成员 |
 | POST | /family/reset-password/\<id\> | 重置成员密码 |
 
+### 数据导入 (Bluecoins)
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /import | 导入页面 |
+| POST | /import/accounts | 导入账户 CSV |
+| POST | /import/categories | 导入分类 CSV |
+| POST | /import/transactions/upload | 上传交易 CSV 预览 |
+| POST | /import/transactions/confirm | 确认导入（含手动映射） |
+| GET | /import/download-skipped | 下载跳过的交易 CSV |
+
+### 数据管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /data | 数据管理页面 |
+| POST | /data/backup | 备份数据库 |
+| POST | /data/restore | 恢复数据库 |
+| POST | /data/query | 执行查询 |
+
 ### 筛选参数（仪表盘）
 
 | 参数 | 类型 | 说明 |
@@ -294,34 +326,35 @@ pytest tests/ --cov=app --cov-report=html
 | 分类测试 | 7 |
 | 交易测试 | 20 |
 | 家庭测试 | 8 |
-| **总计** | **70** |
+| 导入账户 | 17 |
+| 导入分类 | 13 |
+| 其他 | 5 |
+| **总计** | **105** |
 
 ## 📝 更新日志
 
 查看 [CHANGELOG.md](CHANGELOG.md) 了解每个版本的详细更新。
 
-### 最新版本 v0.1.2
+### 最新版本 v0.2.8
 
-- ✨ 仪表盘筛选增强（分类、账户筛选）
-- ✨ 交易时间精确到分钟
-- ✨ 交易编辑功能
-- ✨ 交易状态管理（核对/标记）
-- ✨ 批量核对
-- 🎨 浅色调 UI 优化
-- ✅ 70 个测试用例
+- 🐛 修复交易导入手动匹配分类 bug（key 格式、年份提取、映射优先级、重复插入）
+- 🐛 修复 `_match_owner()` 兜底逻辑与文档不一致
+- 🔧 移除八达通交易分类特殊处理，统一精确匹配
+- ✨ 创建新分类表单添加别名字段
+- 🐛 修复测试数据库隔离（`create_app` 支持 `test_config`）
+- ✅ 105 个测试用例全部通过
 
 ## 🗺️ 路线图
 
-### 短期计划 (v0.1.x)
-- [x] 交易状态管理
-- [x] 交易编辑功能
-- [x] 时间精确到分钟
-- [x] 筛选增强
-- [ ] 数据导出功能（CSV/Excel）
+### 短期计划 (v0.2.x)
+- [x] 数据导入功能（Bluecoins CSV）
+- [x] 导入预览与手动映射
+- [x] 数据备份与恢复
 - [ ] 图表统计分析（饼图/折线图）
 - [ ] 仪表盘首页显示账户余额
+- [ ] 数据导出功能（CSV/Excel）
 
-### 中期计划 (v0.2.x)
+### 中期计划 (v0.3.x)
 - [ ] 定期存款管理
 - [ ] 货币转换
 - [ ] 预算设置与管理
