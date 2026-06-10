@@ -10,20 +10,20 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         
         <div class="form-row">
-            <div class="form-group">
-                <label for="account_name">账户名称 *</label>
-                <input type="text" id="account_name" name="account_name" 
-                       placeholder="例如：中信储蓄卡" required>
+            <div class="form-group" style="flex: 1;">
+                <label for="account_owner_id">账户拥有者</label>
+                <select id="account_owner_id" name="account_owner_id">
+                    {% for member in members %}
+                    <option value="{{ member.owner_id }}" 
+                            {% if member.owner_id == current_owner.owner_id %}selected{% endif %}>
+                        {{ member.owner_name }}
+                        {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
+                        {% if member.owner_id == current_owner.owner_id %}(我){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
             </div>
-            <div class="form-group">
-                <label for="account_other_name">别名</label>
-                <input type="text" id="account_other_name" name="account_other_name" 
-                       placeholder="可选别名">
-            </div>
-        </div>
-        
-        <div class="form-row-3">
-            <div class="form-group">
+            <div class="form-group" style="flex: 1;">
                 <label for="account_type">账户类型 *</label>
                 <select id="account_type" name="account_type" required>
                     {% for type in account_types %}
@@ -31,12 +31,18 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="form-group">
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group" style="flex: 1;">
                 <label for="account_custodian">机构/钱包 *</label>
                 <input type="text" id="account_custodian" name="account_custodian" 
                        placeholder="例如：中信银行、八达通、支付宝" required>
             </div>
-            <div class="form-group">
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group" style="flex: 1; max-width: 140px;">
                 <label for="currency">货币</label>
                 <select id="currency" name="currency">
                     <option value="HKD">HKD - 港币</option>
@@ -49,31 +55,31 @@
                     <option value="SGD">SGD - 新加坡元</option>
                 </select>
             </div>
+            <div class="form-group" style="flex: 1;">
+                <label for="account_name">账户名称 *</label>
+                <input type="text" id="account_name" name="account_name" 
+                       placeholder="例如：中信储蓄卡" required>
+            </div>
         </div>
         
-        <div class="form-row-3">
-            <div class="form-group">
+        <div class="form-row">
+            <div class="form-group" style="flex: 1;">
+                <label for="account_other_name">别名</label>
+                <input type="text" id="account_other_name" name="account_other_name" 
+                       placeholder="可选别名">
+            </div>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group" style="flex: 1;">
                 <label for="account_create_date">创建日期</label>
                 <input type="date" id="account_create_date" name="account_create_date" 
                        value="{{ today_date() }}">
             </div>
-            <div class="form-group">
+            <div class="form-group" style="flex: 1;">
                 <label for="account_close_date">关闭日期</label>
                 <input type="date" id="account_close_date" name="account_close_date">
                 <small style="color: #aaa;">如已关闭可填写</small>
-            </div>
-            <div class="form-group">
-                <label for="account_owner_id">账户拥有者</label>
-                <select id="account_owner_id" name="account_owner_id">
-                    {% for member in members %}
-                    <option value="{{ member.owner_id }}" 
-                            {% if member.owner_id == current_owner.owner_id %}selected{% endif %}>
-                        {{ member.owner_name }}
-                        {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
-                        {% if member.owner_id == current_owner.owner_id %}(我){% endif %}
-                    </option>
-                    {% endfor %}
-                </select>
             </div>
         </div>
         

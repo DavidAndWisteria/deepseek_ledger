@@ -94,56 +94,82 @@
         <form method="POST" action="{{ url_for('transactions.add_transaction') }}" id="transaction-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             
-            <div class="form-row-3">
+            <div class="form-row">
                 <div class="form-group">
                     <label for="trans_type">交易类型 *</label>
                     <select id="trans_type" name="trans_type" required onchange="onTypeChange()">
                         <option value="expense">📤 支出</option>
                         <option value="income">📥 收入</option>
                         <option value="transfer">🔀 转账</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="account_id">账户 *</label>
-                    <select id="account_id" name="account_id" required>
-                        <option value="">选择账户</option>
-                        {% for account in accounts %}
-                        <option value="{{ account.account_id }}">
-                            {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group" id="to-account-group" style="display: none;">
-                    <label for="to_account_id">转入账户 *</label>
-                    <select id="to_account_id" name="to_account_id">
-                        <option value="">选择账户</option>
-                        {% for account in accounts %}
-                        <option value="{{ account.account_id }}">
-                            {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
-                        </option>
-                        {% endfor %}
+                        <option value="special">🔧 特殊</option>
                     </select>
                 </div>
             </div>
             
-            <div class="form-row-3">
-                <div class="form-group">
-                    <label for="amount">金额 *</label>
-                    <input type="number" id="amount" name="amount" step="0.01" min="0.01" placeholder="0.00" required>
-                </div>
-                <div class="form-group">
-                    <label for="category_id">分类 *</label>
-                    <select id="category_id" name="category_id" required>
-                        <option value="">选择分类</option>
-                        {% for cat in categories %}
-                        <option value="{{ cat.category_id }}" data-type="{{ cat.category_type.value }}">
-                            {{ cat.category_class }} › {{ cat.category_subclass or '-' }} › {{ cat.category_name }}
+            <div class="form-row">
+                <div class="form-group" style="flex: 2;">
+                    <label for="account_id">账户 *</label>
+                    <select id="account_id" name="account_id" required onchange="onAccountChange()">
+                        <option value="">选择账户</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}">
+                            {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
                         </option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="flex: 1; max-width: 110px;">
+                    <label for="currency">货币</label>
+                    <select id="currency" name="currency">
+                        <option value="HKD">HKD</option>
+                        <option value="USD">USD</option>
+                        <option value="CNY">CNY</option>
+                        <option value="JPY">JPY</option>
+                        <option value="GBP">GBP</option>
+                        <option value="EUR">EUR</option>
+                        <option value="AUD">AUD</option>
+                        <option value="SGD">SGD</option>
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label for="amount">金额 *</label>
+                    <input type="number" id="amount" name="amount" step="0.01" min="0.01" placeholder="0.00" required onchange="onAmountChange()">
+                </div>
+            </div>
+            
+            <div class="form-row" id="to-account-group" style="display: none;">
+                <div class="form-group" style="flex: 2;">
+                    <label for="to_account_id">转入账户 *</label>
+                    <select id="to_account_id" name="to_account_id">
+                        <option value="">选择账户</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}">
+                            {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 1; max-width: 110px;">
+                    <label for="to_currency">货币</label>
+                    <select id="to_currency" name="to_currency">
+                        <option value="HKD">HKD</option>
+                        <option value="USD">USD</option>
+                        <option value="CNY">CNY</option>
+                        <option value="JPY">JPY</option>
+                        <option value="GBP">GBP</option>
+                        <option value="EUR">EUR</option>
+                        <option value="AUD">AUD</option>
+                        <option value="SGD">SGD</option>
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label for="to_amount">金额 *</label>
+                    <input type="number" id="to_amount" name="to_amount" step="0.01" min="0.01" placeholder="0.00">
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group" style="flex: 1;">
                     <label>日期 *</label>
                     <div style="display: flex; gap: 8px;">
                         <input type="date" id="trans_date" name="trans_date" value="{{ start_date }}" required style="flex: 1;">
@@ -154,9 +180,25 @@
                 </div>
             </div>
             
-            <div class="form-group">
-                <label for="description">备注</label>
-                <input type="text" id="description" name="description" placeholder="可选备注" maxlength="500">
+            <div class="form-row">
+                <div class="form-group" style="flex: 1;">
+                    <label for="category_id">分类 *</label>
+                    <select id="category_id" name="category_id" required>
+                        <option value="">选择分类</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.category_id }}" data-type="{{ cat.category_type.value }}">
+                            {{ cat.category_class }} › {{ cat.category_subclass or '-' }} › {{ cat.category_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group" style="flex: 1;">
+                    <label for="description">备注</label>
+                    <input type="text" id="description" name="description" placeholder="可选备注" maxlength="500">
+                </div>
             </div>
             
             <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">✓ 添加交易</button>
@@ -213,19 +255,21 @@
                         </td>
                         <td style="white-space: nowrap;">{{ t.trans_datetime.strftime('%H:%M') }}</td>
                         <td>
-                            {% if t.is_income() %}
+                            {% if t.category_rel.category_type.value == 'I' %}
                                 <span class="badge badge-income">收入</span>
-                            {% elif t.is_expense() %}
+                            {% elif t.category_rel.category_type.value == 'E' %}
                                 <span class="badge badge-expense">支出</span>
-                            {% else %}
+                            {% elif t.category_rel.category_type.value == 'T' %}
                                 <span class="badge badge-transfer">转账</span>
+                            {% else %}
+                                <span class="badge badge-transfer">特殊</span>
                             {% endif %}
                         </td>
-                        <td style="font-size: 12px;">{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.account_name }}</td>
-                        <td style="font-size: 12px;">{{ t.category_rel.category_class }} › {{ t.category_rel.category_name }}</td>
+                        <td style="font-size: 12px;">{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.owner.owner_name }} · {{ t.account_rel.account_name }}</td>
+                        <td style="font-size: 12px;">{{ t.category_rel.category_class }} › {{ t.category_rel.category_subclass or '-' }} › {{ t.category_rel.category_name }}</td>
                         <td>
                             <span class="{{ 'text-income' if t.trans_amount > 0 else 'text-expense' }}">
-                                ${{ "%.2f"|format(t.trans_amount) }}
+                                {{ t.trans_currency_name }} {{ "%.2f"|format(t.trans_amount) }}
                             </span>
                         </td>
                         <td style="text-align: center;">
@@ -250,7 +294,7 @@
                         </td>
                         <td style="white-space: nowrap;">
                             <button type="button" class="btn-action" style="background: #d4e6f1; color: #2980b9;"
-                                    onclick="openDetailModal('{{ t.trans_datetime.strftime('%Y-%m-%d %H:%M') }}', '{{ '收入' if t.is_income() else '支出' if t.is_expense() else '转账' }}', '{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.account_name }}', '{{ t.category_rel.category_class }} › {{ t.category_rel.category_name }}', '{{ '%.2f'|format(t.trans_amount) }}', `{{ t.trans_desc or '' }}`, '{{ t.trans_status.value }}', {{ t.trans_id }}, {{ t.trans_account_id }}, {{ t.trans_category_id }}, {{ t.trans_amount|abs }})"
+                                    onclick="openDetailModal('{{ t.trans_datetime.strftime('%Y-%m-%d %H:%M') }}', '{{ {'I': '收入', 'E': '支出', 'T': '转账'}.get(t.category_rel.category_type.value, '特殊') }}', '{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.owner.owner_name }} · {{ t.account_rel.account_name }}', '{{ t.category_rel.category_class }} › {{ t.category_rel.category_subclass or '-' }} › {{ t.category_rel.category_name }}', '{{ t.trans_currency_name }} {{ '%.2f'|format(t.trans_amount) }}', `{{ t.trans_desc or '' }}`, '{{ t.trans_status.value }}', {{ t.trans_id }}, {{ t.trans_account_id }}, {{ t.trans_category_id }}, {{ t.trans_amount|abs }})"
                                     title="查看详情">📋</button>
                             
                             {% if t.trans_status.value == 'UNVERIFIED' %}
@@ -330,19 +374,54 @@
         const transType = document.getElementById('trans_type').value;
         const toAccountGroup = document.getElementById('to-account-group');
         const toAccountSelect = document.getElementById('to_account_id');
+        const toAmount = document.getElementById('to_amount');
         
         if (transType === 'transfer') {
-            toAccountGroup.style.display = 'block';
+            toAccountGroup.style.display = '';
             toAccountSelect.required = true;
+            toAmount.required = true;
+            syncTransferDefaults();
             filterCategories('T');
-        } else if (transType === 'income') {
-            toAccountGroup.style.display = 'none';
-            toAccountSelect.required = false;
-            filterCategories('I');
         } else {
             toAccountGroup.style.display = 'none';
             toAccountSelect.required = false;
-            filterCategories('E');
+            toAmount.required = false;
+            if (transType === 'income') {
+                filterCategories('I');
+            } else if (transType === 'special') {
+                filterCategories('S');
+            } else {
+                filterCategories('E');
+            }
+        }
+    }
+    
+    function onAccountChange() {
+        const accountSelect = document.getElementById('account_id');
+        const accountOption = accountSelect.options[accountSelect.selectedIndex];
+        const currency = accountOption.getAttribute('data-currency');
+        if (currency) {
+            document.getElementById('currency').value = currency;
+        }
+        syncTransferDefaults();
+    }
+    
+    function onAmountChange() {
+        syncTransferDefaults();
+    }
+    
+    function syncTransferDefaults() {
+        const transType = document.getElementById('trans_type').value;
+        if (transType !== 'transfer') return;
+        const fromCurrency = document.getElementById('currency').value;
+        const fromAmount = parseFloat(document.getElementById('amount').value) || 0;
+        const toCurrency = document.getElementById('to_currency');
+        const toAmount = document.getElementById('to_amount');
+        if (!toCurrency.value) {
+            toCurrency.value = fromCurrency;
+        }
+        if (!toAmount.value && fromAmount > 0) {
+            toAmount.value = fromAmount.toFixed(2);
         }
     }
     
@@ -350,7 +429,7 @@
         const options = document.getElementById('category_id').options;
         for (let i = 0; i < options.length; i++) {
             const dataType = options[i].getAttribute('data-type');
-            if (!dataType || dataType === type || dataType === 'S') {
+            if (!dataType || dataType === type) {
                 options[i].style.display = '';
             } else {
                 options[i].style.display = 'none';

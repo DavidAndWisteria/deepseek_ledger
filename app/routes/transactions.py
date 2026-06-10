@@ -141,6 +141,7 @@ def add_transaction():
     account_id = request.form.get('account_id', type=int)
     category_id = request.form.get('category_id', type=int)
     amount = request.form.get('amount', type=float)
+    currency = request.form.get('currency', 'HKD')
     description = request.form.get('description', '')
     trans_date = request.form.get('trans_date', '')
     trans_time = request.form.get('trans_time', '00:00')
@@ -172,6 +173,7 @@ def add_transaction():
             trans_datetime=trans_datetime,
             trans_desc=description,
             trans_amount=amount,
+            trans_currency_name=currency,
             trans_account_id=account_id,
             trans_category_id=category_id,
             trans_owner_id=owner.owner_id
@@ -183,6 +185,19 @@ def add_transaction():
             trans_datetime=trans_datetime,
             trans_desc=description,
             trans_amount=-amount,
+            trans_currency_name=currency,
+            trans_account_id=account_id,
+            trans_category_id=category_id,
+            trans_owner_id=owner.owner_id
+        )
+        db.session.add(transaction)
+    
+    elif trans_type == 'special':
+        transaction = Transaction(
+            trans_datetime=trans_datetime,
+            trans_desc=description,
+            trans_amount=amount,
+            trans_currency_name=currency,
             trans_account_id=account_id,
             trans_category_id=category_id,
             trans_owner_id=owner.owner_id
@@ -191,6 +206,10 @@ def add_transaction():
     
     elif trans_type == 'transfer':
         to_account_id = request.form.get('to_account_id', type=int)
+        to_currency = request.form.get('to_currency', currency)
+        to_amount = request.form.get('to_amount', type=float)
+        if to_amount is None or to_amount <= 0:
+            to_amount = amount
         if not to_account_id or to_account_id == account_id:
             flash('请选择不同的转出和转入账户')
             return redirect(url_for('transactions.dashboard'))
@@ -199,6 +218,7 @@ def add_transaction():
             trans_datetime=trans_datetime,
             trans_desc=f'转出: {description}',
             trans_amount=-amount,
+            trans_currency_name=currency,
             trans_account_id=account_id,
             trans_category_id=category_id,
             trans_owner_id=owner.owner_id
@@ -209,7 +229,8 @@ def add_transaction():
         trans_in = Transaction(
             trans_datetime=trans_datetime,
             trans_desc=f'转入: {description}',
-            trans_amount=amount,
+            trans_amount=to_amount,
+            trans_currency_name=to_currency,
             trans_account_id=to_account_id,
             trans_category_id=category_id,
             trans_owner_id=owner.owner_id,

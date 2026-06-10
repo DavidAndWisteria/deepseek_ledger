@@ -229,18 +229,16 @@
             <div id="new_acct_form_{{ loop.index }}" style="display: none; margin-top: 8px; padding: 12px; background: #fff; border: 1px solid #ddd; border-radius: 6px;">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                     <div>
-                        <label style="font-size: 11px; color: #888;">账户名称 *</label>
-                        <input type="text" name="new_account_{{ bc_name }}" value="{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #888;">别名</label>
-                        <input type="text" name="new_acct_other_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
-                    <div>
-                        <label style="font-size: 11px; color: #888;">机构 *</label>
-                        <input type="text" name="new_acct_custodian_{{ bc_name }}" value="导入创建" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                        <label style="font-size: 11px; color: #888;">拥有者</label>
+                        <select name="new_acct_owner_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                            {% for member in members %}
+                            <option value="{{ member.owner_id }}" {% if member.owner_id == current_owner.owner_id %}selected{% endif %}>
+                                {{ member.owner_name }}
+                                {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
+                                {% if member.owner_id == current_owner.owner_id %}(我){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div>
                         <label style="font-size: 11px; color: #888;">类型</label>
@@ -255,7 +253,13 @@
                         </select>
                     </div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                <div style="display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 6px;">
+                    <div>
+                        <label style="font-size: 11px; color: #888;">机构 *</label>
+                        <input type="text" name="new_acct_custodian_{{ bc_name }}" value="导入创建" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px; margin-top: 6px;">
                     <div>
                         <label style="font-size: 11px; color: #888;">货币</label>
                         <select name="new_acct_currency_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
@@ -270,16 +274,14 @@
                         </select>
                     </div>
                     <div>
-                        <label style="font-size: 11px; color: #888;">拥有者</label>
-                        <select name="new_acct_owner_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                            {% for member in members %}
-                            <option value="{{ member.owner_id }}" {% if member.owner_id == current_owner.owner_id %}selected{% endif %}>
-                                {{ member.owner_name }}
-                                {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
-                                {% if member.owner_id == current_owner.owner_id %}(我){% endif %}
-                            </option>
-                            {% endfor %}
-                        </select>
+                        <label style="font-size: 11px; color: #888;">账户名称 *</label>
+                        <input type="text" name="new_account_{{ bc_name }}" value="{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 6px;">
+                    <div>
+                        <label style="font-size: 11px; color: #888;">别名</label>
+                        <input type="text" name="new_acct_other_{{ bc_name }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
                     </div>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
@@ -323,28 +325,6 @@
             <div id="new_cat_form_{{ cat_data.key[0] }}_{{ loop.index }}" style="display: none; margin-top: 8px; padding: 12px; background: #fff; border: 1px solid #ddd; border-radius: 6px;">
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
                     <div>
-                        <label style="font-size: 11px; color: #888;">名称 *</label>
-                        <input type="text" name="new_category_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
-                               value="{{ cat_data.title }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #888;">别名</label>
-                        <input type="text" name="new_cat_other_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
-                               style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #888;">大类 *</label>
-                        <input type="text" name="new_cat_class_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
-                               value="{{ cat_data.group }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
-                    <div>
-                        <label style="font-size: 11px; color: #888;">子类</label>
-                        <input type="text" name="new_cat_subclass_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
-                               value="{{ cat_data.category }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                    </div>
-                    <div>
                         <label style="font-size: 11px; color: #888;">类型</label>
                         <select name="new_cat_type_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
                                 style="width: 100%; padding: 6px 8px; font-size: 13px;">
@@ -353,6 +333,28 @@
                             <option value="T" {{ 'selected' if cat_data.bc_type == '转账' else '' }}>T - 转账</option>
                             <option value="S">S - 特殊</option>
                         </select>
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; color: #888;">大类 *</label>
+                        <input type="text" name="new_cat_class_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                               value="{{ cat_data.group }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; color: #888;">子类</label>
+                        <input type="text" name="new_cat_subclass_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                               value="{{ cat_data.category }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                    <div>
+                        <label style="font-size: 11px; color: #888;">名称 *</label>
+                        <input type="text" name="new_category_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                               value="{{ cat_data.title }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; color: #888;">别名</label>
+                        <input type="text" name="new_cat_other_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                               style="width: 100%; padding: 6px 8px; font-size: 13px;">
                     </div>
                 </div>
             </div>
