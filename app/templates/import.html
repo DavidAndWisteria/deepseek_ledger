@@ -328,25 +328,32 @@
                                value="{{ cat_data.title }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
                     </div>
                     <div>
+                        <label style="font-size: 11px; color: #888;">别名</label>
+                        <input type="text" name="new_cat_other_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                               style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                    </div>
+                    <div>
                         <label style="font-size: 11px; color: #888;">大类 *</label>
                         <input type="text" name="new_cat_class_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
                                value="{{ cat_data.group }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
                     </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
                     <div>
                         <label style="font-size: 11px; color: #888;">子类</label>
                         <input type="text" name="new_cat_subclass_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
                                value="{{ cat_data.category }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
                     </div>
-                </div>
-                <div style="margin-top: 6px;">
-                    <label style="font-size: 11px; color: #888;">类型</label>
-                    <select name="new_cat_type_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
-                            style="width: 100%; padding: 6px 8px; font-size: 13px;">
-                        <option value="E" {{ 'selected' if cat_data.bc_type == '支出' else '' }}>E - 支出</option>
-                        <option value="I" {{ 'selected' if cat_data.bc_type == '收入' else '' }}>I - 收入</option>
-                        <option value="T" {{ 'selected' if cat_data.bc_type == '转账' else '' }}>T - 转账</option>
-                        <option value="S">S - 特殊</option>
-                    </select>
+                    <div>
+                        <label style="font-size: 11px; color: #888;">类型</label>
+                        <select name="new_cat_type_{{ cat_data.key[0] }}|||{{ cat_data.key[1] }}|||{{ cat_data.key[2] }}|||{{ cat_data.key[3] }}|||{{ cat_data.key[4] }}" 
+                                style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                            <option value="E" {{ 'selected' if cat_data.bc_type == '支出' else '' }}>E - 支出</option>
+                            <option value="I" {{ 'selected' if cat_data.bc_type == '收入' else '' }}>I - 收入</option>
+                            <option value="T" {{ 'selected' if cat_data.bc_type == '转账' else '' }}>T - 转账</option>
+                            <option value="S">S - 特殊</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>

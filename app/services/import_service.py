@@ -44,6 +44,20 @@ class ImportService:
             key = (m.bluecoins_year, m.bluecoins_type, m.bluecoins_group,
                    m.bluecoins_category, m.bluecoins_title)
             self.category_map[key] = m.category_id
+        
+        manual_mappings = [m for m in cat_mappings if m.is_manual]
+        manual_keys = set()
+        for m in manual_mappings:
+            key = (m.bluecoins_year, m.bluecoins_type, m.bluecoins_group,
+                   m.bluecoins_category, m.bluecoins_title)
+            manual_keys.add(key)
+        for m in manual_mappings:
+            bt, g, c, t = m.bluecoins_type, m.bluecoins_group, m.bluecoins_category, m.bluecoins_title
+            for existing_key in list(self.category_map.keys()):
+                if existing_key[1] == bt and existing_key[2] == g and \
+                   existing_key[3] == c and existing_key[4] == t:
+                    if existing_key not in manual_keys:
+                        del self.category_map[existing_key]
     
     def _match_owner(self, owner_name):
         """匹配拥有者，返回 Owner 对象或 None"""
@@ -79,7 +93,7 @@ class ImportService:
                     db.session.flush()
                 return family_owner
         
-        return self.owner
+        return None
     
     def import_accounts_csv(self, file_content):
         """导入账户 CSV"""
@@ -442,10 +456,9 @@ class ImportService:
                 self.skipped_transactions.append(row)
                 continue
             
-            cat_key_str = f"{bc_type}|||{bc_group}|||{bc_category}|||{bc_title}"
-            # 也检查五元组
-            cat_key_tuple = ('', bc_type, bc_group, bc_category, bc_title)
-            if cat_key_str in skipped_categories or cat_key_tuple in skipped_categories:
+            trans_year = row.get('日期', '').strip()[:4]
+            cat_key_str = f"{trans_year}|||{bc_type}|||{bc_group}|||{bc_category}|||{bc_title}"
+            if cat_key_str in skipped_categories:
                 self.results['transactions']['skipped'] += 1
                 self.results['transactions']['details'].append({
                     'row': i + 1, 'status': 'skipped',
@@ -491,7 +504,22 @@ class ImportService:
             parts = key_str.split('|||')
             if len(parts) == 5 and category_id:
                 key = tuple(parts)
-                if key not in self.category_map:
+                bt, g, c, t = parts[1], parts[2], parts[3], parts[4]
+                for existing_key in list(self.category_map.keys()):
+                    if existing_key[1] == bt and existing_key[2] == g and \
+                       existing_key[3] == c and existing_key[4] == t:
+                        del self.category_map[existing_key]
+                existing = BluecoinsCategoryMapping.query.filter_by(
+                    bluecoins_year=parts[0],
+                    bluecoins_type=parts[1],
+                    bluecoins_group=parts[2],
+                    bluecoins_category=parts[3],
+                    bluecoins_title=parts[4]
+                ).first()
+                if existing:
+                    existing.category_id = int(category_id)
+                    existing.is_manual = True
+                else:
                     mapping = BluecoinsCategoryMapping(
                         bluecoins_year=parts[0],
                         bluecoins_type=parts[1],
@@ -502,7 +530,7 @@ class ImportService:
                         is_manual=True
                     )
                     db.session.add(mapping)
-                    self.category_map[key] = int(category_id)
+                self.category_map[key] = int(category_id)
         
         db.session.flush()
 
@@ -553,7 +581,7 @@ class ImportService:
         if bc_type == '转账':
             category_id = self._get_transfer_category_id()
         else:
-            category_id = self._match_category(bc_type, bc_group, bc_category, title, account_name=bc_account)
+            category_id = self._match_category(bc_type, bc_group, bc_category, title)
         
         if not category_id:
             self.results['transactions']['details'].append({
@@ -674,7 +702,7 @@ class ImportService:
         
         return None
     
-    def _match_category(self, bc_type, group, category_name, title, amount=None, account_name=None):
+    def _match_category(self, bc_type, group, category_name, title, amount=None):
         print(f"DEBUG _match_category: looking for {bc_type}/{group}/{category_name}/{title}")
         """匹配分类，返回 category_id 或 None"""
         for key, cat_id in {**self.category_map, **self.new_category_mappings}.items():
@@ -682,26 +710,28 @@ class ImportService:
             if g == group and c == category_name and t == title and bt == bc_type:
                 return cat_id
         
-        if account_name and '八达通' in account_name:
-            for key, cat_id in {**self.category_map, **self.new_category_mappings}.items():
-                year, bt, g, c, t = key
-                if g == group and c == category_name and bt == bc_type:
-                    return cat_id
-        
         cat = Category.query.filter_by(category_name=title, category_subclass=category_name).first()
         if not cat:
             cat = Category.query.filter_by(category_name=title).first()
         
         if cat:
             try:
-                mapping = BluecoinsCategoryMapping(
+                key = ('', bc_type, group, category_name, title)
+                existing = BluecoinsCategoryMapping.query.filter_by(
                     bluecoins_year='', bluecoins_type=bc_type,
                     bluecoins_group=group, bluecoins_category=category_name,
-                    bluecoins_title=title, category_id=cat.category_id, is_manual=False
-                )
-                db.session.add(mapping)
-                db.session.flush()
-                key = ('', bc_type, group, category_name, title)
+                    bluecoins_title=title
+                ).first()
+                if existing:
+                    existing.category_id = cat.category_id
+                else:
+                    mapping = BluecoinsCategoryMapping(
+                        bluecoins_year='', bluecoins_type=bc_type,
+                        bluecoins_group=group, bluecoins_category=category_name,
+                        bluecoins_title=title, category_id=cat.category_id, is_manual=False
+                    )
+                    db.session.add(mapping)
+                    db.session.flush()
                 self.category_map[key] = cat.category_id
                 return cat.category_id
             except Exception:
@@ -776,7 +806,7 @@ class ImportService:
             
             if bc_type != '转账':
                 category_matched = self._match_category(
-                    bc_type, bc_group, bc_category, bc_title, account_name=bc_account
+                    bc_type, bc_group, bc_category, bc_title
                 ) is not None
             
             reason = []
@@ -785,11 +815,12 @@ class ImportService:
                 seen_accounts.add(bc_account)
             if not category_matched and bc_type != '转账':
                 reason.append('分类未匹配')
-                key = (bc_type, bc_group, bc_category, bc_title)
-                if key not in seen_categories:
-                    seen_categories[key] = {'accounts': set(), 'bc_type': bc_type, 'group': bc_group,
-                                            'category': bc_category, 'title': bc_title}
-                seen_categories[key]['accounts'].add(bc_account)
+            trans_year = row.get('日期', '').strip()[:4]
+            key = (trans_year, bc_type, bc_group, bc_category, bc_title)
+            if key not in seen_categories:
+                seen_categories[key] = {'accounts': set(), 'bc_type': bc_type, 'group': bc_group,
+                                        'category': bc_category, 'title': bc_title}
+            seen_categories[key]['accounts'].add(bc_account)
             
             result.append({
                 'row': row,

@@ -34,8 +34,7 @@ def app():
     db_fd, db_path = tempfile.mkstemp(suffix='.db')
     os.close(db_fd)
     
-    app = create_app()
-    app.config.update({
+    app = create_app(test_config={
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
         'WTF_CSRF_ENABLED': False,

@@ -232,36 +232,51 @@ def confirm_transactions():
         for key, value in request.form.items():
             if key.startswith('new_category_') and value:
                 key_str = key.replace('new_category_', '')
+                map_value = request.form.get(f'map_category_{key_str}', '')
+                if map_value != '__new__':
+                    continue
                 parts = key_str.split('|||')
                 if len(parts) != 5:
-                    continue  # 跳过格式不正确的 key
+                    continue
                 if not value.strip():
                     continue
                 if key_str in skipped_categories:
                     continue
-                if len(parts) == 5 and value.strip():
-                    if key_str not in skipped_categories:
-                        bc_year, bc_type, bc_group, bc_category, bc_title = parts
-                        category_name = value.strip()
-                        
-                        cat_class = request.form.get(f'new_cat_class_{key_str}', bc_group).strip()
-                        cat_subclass = request.form.get(f'new_cat_subclass_{key_str}', bc_category).strip()
-                        cat_type_str = request.form.get(f'new_cat_type_{key_str}', 'E').strip()
-                        
-                        try:
-                            cat_type = CategoryType(cat_type_str)
-                        except ValueError:
-                            cat_type = CategoryType.E
-                        
-                        cat = Category(
-                            category_name=category_name,
-                            category_class=cat_class,
-                            category_subclass=cat_subclass,
-                            category_type=cat_type
-                        )
-                        db.session.add(cat)
-                        db.session.flush()
-                        
+                if key_str not in skipped_categories:
+                    bc_year, bc_type, bc_group, bc_category, bc_title = parts
+                    category_name = value.strip()
+                    
+                    cat_class = request.form.get(f'new_cat_class_{key_str}', bc_group).strip()
+                    cat_subclass = request.form.get(f'new_cat_subclass_{key_str}', bc_category).strip()
+                    cat_other = request.form.get(f'new_cat_other_{key_str}', '').strip() or None
+                    cat_type_str = request.form.get(f'new_cat_type_{key_str}', 'E').strip()
+                    
+                    try:
+                        cat_type = CategoryType(cat_type_str)
+                    except ValueError:
+                        cat_type = CategoryType.E
+                    
+                    cat = Category(
+                        category_name=category_name,
+                        category_other_name=cat_other,
+                        category_class=cat_class,
+                        category_subclass=cat_subclass,
+                        category_type=cat_type
+                    )
+                    db.session.add(cat)
+                    db.session.flush()
+                    
+                    existing_mapping = BluecoinsCategoryMapping.query.filter_by(
+                        bluecoins_year=bc_year,
+                        bluecoins_type=bc_type,
+                        bluecoins_group=bc_group,
+                        bluecoins_category=bc_category,
+                        bluecoins_title=bc_title
+                    ).first()
+                    if existing_mapping:
+                        existing_mapping.category_id = cat.category_id
+                        existing_mapping.is_manual = True
+                    else:
                         cat_mapping = BluecoinsCategoryMapping(
                             bluecoins_year=bc_year,
                             bluecoins_type=bc_type,
@@ -272,9 +287,13 @@ def confirm_transactions():
                             is_manual=True
                         )
                         db.session.add(cat_mapping)
-                        db.session.flush()
-                        mapping_key = (bc_year, bc_type, bc_group, bc_category, bc_title)
-                        service.category_map[mapping_key] = cat.category_id
+                    db.session.flush()
+                    mapping_key = (bc_year, bc_type, bc_group, bc_category, bc_title)
+                    for existing_key in list(service.category_map.keys()):
+                        if existing_key[1] == bc_type and existing_key[2] == bc_group and \
+                           existing_key[3] == bc_category and existing_key[4] == bc_title:
+                            del service.category_map[existing_key]
+                    service.category_map[mapping_key] = cat.category_id
         
         db.session.commit()
     

@@ -10,15 +10,18 @@ db = SQLAlchemy()
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
-def create_app():
+def create_app(test_config=None):
     app = Flask(__name__)
     
     # 基础配置
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-me')
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///../instance/ledger.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URI', 'sqlite:///../instance/ledger.db')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+    if test_config:
+        app.config.update(test_config)
 
     # 确保instance文件夹存在
     os.makedirs(app.instance_path, exist_ok=True)
