@@ -363,7 +363,7 @@
         <div class="nav-left">
             <a href="{{ url_for('transactions.dashboard') }}" class="brand">💰 财务管家</a>
             <a href="{{ url_for('transactions.dashboard') }}" class="{{ 'active' if request.endpoint == 'transactions.dashboard' }}">📊 仪表盘</a>
-            <a href="{{ url_for('accounts.list_accounts') }}" class="{{ 'active' if request.endpoint and 'accounts' in request.endpoint }}">🏦 账户管理</a>
+            <a href="{{ url_for('accounts.list_accounts') }}" class="{{ 'active' if request.endpoint and 'accounts' in request.endpoint }}">🏦 账户概览</a>
             <a href="{{ url_for('categories.list_categories') }}" class="{{ 'active' if request.endpoint and 'categories' in request.endpoint }}">📂 分类管理</a>
         </div>
                 <div class="nav-right">

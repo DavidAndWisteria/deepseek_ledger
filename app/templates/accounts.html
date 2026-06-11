@@ -1,231 +1,533 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1 style="margin-bottom: 24px; color: #1a1a2e;">🏦 账户管理</h1>
+<h1 style="margin-bottom: 24px; color: #1a1a2e;">🏦 账户概览</h1>
 
-<!-- 添加账户 -->
-<div class="card">
-    <h3>➕ 添加新账户</h3>
-    <form method="POST" action="{{ url_for('accounts.add_account') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        
-        <div class="form-row">
-            <div class="form-group" style="flex: 1;">
-                <label for="account_owner_id">账户拥有者</label>
-                <select id="account_owner_id" name="account_owner_id">
-                    {% for member in members %}
-                    <option value="{{ member.owner_id }}" 
-                            {% if member.owner_id == current_owner.owner_id %}selected{% endif %}>
-                        {{ member.owner_name }}
-                        {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
-                        {% if member.owner_id == current_owner.owner_id %}(我){% endif %}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="form-group" style="flex: 1;">
-                <label for="account_type">账户类型 *</label>
-                <select id="account_type" name="account_type" required>
-                    {% for type in account_types %}
-                    <option value="{{ type.name }}">{{ type.value }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
-        
-        <div class="form-row">
-            <div class="form-group" style="flex: 1;">
-                <label for="account_custodian">机构/钱包 *</label>
-                <input type="text" id="account_custodian" name="account_custodian" 
-                       placeholder="例如：中信银行、八达通、支付宝" required>
-            </div>
-        </div>
-        
-        <div class="form-row">
-            <div class="form-group" style="flex: 1; max-width: 140px;">
-                <label for="currency">货币</label>
-                <select id="currency" name="currency">
-                    <option value="HKD">HKD - 港币</option>
-                    <option value="USD">USD - 美元</option>
-                    <option value="CNY">CNY - 人民币</option>
-                    <option value="JPY">JPY - 日元</option>
-                    <option value="GBP">GBP - 英镑</option>
-                    <option value="EUR">EUR - 欧元</option>
-                    <option value="AUD">AUD - 澳元</option>
-                    <option value="SGD">SGD - 新加坡元</option>
-                </select>
-            </div>
-            <div class="form-group" style="flex: 1;">
-                <label for="account_name">账户名称 *</label>
-                <input type="text" id="account_name" name="account_name" 
-                       placeholder="例如：中信储蓄卡" required>
-            </div>
-        </div>
-        
-        <div class="form-row">
-            <div class="form-group" style="flex: 1;">
-                <label for="account_other_name">别名</label>
-                <input type="text" id="account_other_name" name="account_other_name" 
-                       placeholder="可选别名">
-            </div>
-        </div>
-        
-        <div class="form-row">
-            <div class="form-group" style="flex: 1;">
-                <label for="account_create_date">创建日期</label>
-                <input type="date" id="account_create_date" name="account_create_date" 
-                       value="{{ today_date() }}">
-            </div>
-            <div class="form-group" style="flex: 1;">
-                <label for="account_close_date">关闭日期</label>
-                <input type="date" id="account_close_date" name="account_close_date">
-                <small style="color: #aaa;">如已关闭可填写</small>
-            </div>
-        </div>
-        
-        <button type="submit" class="btn btn-primary">✓ 添加账户</button>
-    </form>
+<div class="tab-nav" style="display: flex; gap: 0; margin-bottom: 24px; border-bottom: 2px solid #e0e0e0;">
+    <button class="tab-btn {{ 'active' if active_tab == 'finance' else '' }}" onclick="switchAccountTab('finance')" id="tab-finance"
+            style="padding: 10px 24px; border: none; background: none; font-size: 15px; cursor: pointer; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 500;">
+        📊 财务状况
+    </button>
+    <button class="tab-btn {{ 'active' if active_tab == 'accounts' else '' }}" onclick="switchAccountTab('accounts')" id="tab-accounts"
+            style="padding: 10px 24px; border: none; background: none; font-size: 15px; cursor: pointer; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 500;">
+        🏦 账户管理
+    </button>
 </div>
 
-<!-- 账户列表 -->
-<div class="card">
-    <h3>📋 账户列表 ({{ accounts|length }})</h3>
-    
-    {% if accounts %}
-    <div style="overflow-x: auto;">
-        <table>
-            <thead>
-                <tr>
-                    <th>类型</th>
-                    <th>拥有者</th>
-                    <th>机构</th>
-                    <th>货币</th>
-                    <th>名称</th>
-                    <th>别名</th>
-                    <th>创建日期</th>
-                    <th>关闭日期</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for account in accounts %}
-                <tr>
-                    <td>{{ account.account_type.value }}</td>
-                    <td>
-                        {{ account.owner.owner_name }}
-                        {% if not account.owner.user %}
-                            <span class="badge" style="background: #d4e6f1; color: #2980b9;">家庭</span>
-                        {% elif account.owner.owner_id == current_owner.owner_id %}
-                            <span class="badge" style="background: #e94560; color: white;">我</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ account.account_custodian }}</td>
-                    <td>{{ account.account_currency_name }}</td>
-                    <td><strong>{{ account.account_name }}</strong></td>
-                    <td>{{ account.account_other_name or '-' }}</td>
-                    <td>{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '-' }}</td>
-                    <td>{{ account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '-' }}</td>
-                    <td>
-                        {% if account.account_close_date %}
-                            <span class="badge" style="background: #fadbd8; color: #e74c3c;">已关闭</span>
-                        {% else %}
-                            <span class="badge" style="background: #d5f5e3; color: #27ae60;">使用中</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <button onclick="openEditModal(this)" 
-                                data-id="{{ account.account_id }}"
-                                data-name="{{ account.account_name }}"
-                                data-other="{{ account.account_other_name or '' }}"
-                                data-custodian="{{ account.account_custodian }}"
-                                data-createdate="{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '' }}"
-                                data-closedate="{{ account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '' }}"
-                                data-ownerid="{{ account.account_owner_id }}"
-                                class="btn btn-secondary btn-sm">✏️ 编辑</button>
-                        <button onclick="confirmDeleteAccount({{ account.account_id }})" 
-                                class="btn btn-danger btn-sm">🗑 删除</button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+<!-- 财务状况 分页 -->
+<div id="tab-finance-panel" style="{{ 'display: none;' if active_tab != 'finance' else '' }}">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div class="card" style="text-align: center; padding: 20px;">
+            <div style="font-size: 36px; font-weight: 700; color: #1a1a2e;">{{ total_accounts }}</div>
+            <div style="color: #888; font-size: 13px; margin-top: 4px;">账户总数</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 20px;">
+            <div style="font-size: 36px; font-weight: 700; color: #27ae60;">{{ active_accounts }}</div>
+            <div style="color: #888; font-size: 13px; margin-top: 4px;">使用中</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 20px;">
+            <div style="font-size: 36px; font-weight: 700; color: #e74c3c;">{{ closed_accounts }}</div>
+            <div style="color: #888; font-size: 13px; margin-top: 4px;">已关闭</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 20px;">
+            <div style="font-size: 36px; font-weight: 700; color: #8e44ad;">{{ currency_breakdown|length }}</div>
+            <div style="color: #888; font-size: 13px; margin-top: 4px;">货币种类</div>
+        </div>
     </div>
-    {% else %}
-    <div style="text-align: center; padding: 40px; color: #999;">
-        <p style="font-size: 48px;">🏦</p>
-        <p>暂无账户，请添加你的第一个账户</p>
+
+    <!-- 日期段选择 + 资产负债表 -->
+    <div class="card" style="margin-bottom: 24px;">
+        <h3>📅 资产负债表</h3>
+        <form method="GET" action="{{ url_for('accounts.list_accounts') }}" style="display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px;">
+            <div class="form-group" style="margin-bottom: 0; max-width: 180px;">
+                <label for="start_date">开始日期</label>
+                <input type="date" id="start_date" name="start_date" value="{{ start_date or '' }}" style="width: 100%;">
+            </div>
+            <div class="form-group" style="margin-bottom: 0; max-width: 180px;">
+                <label for="end_date">截止日期</label>
+                <input type="date" id="end_date" name="end_date" value="{{ end_date or '' }}" style="width: 100%;">
+            </div>
+            <button type="submit" class="btn btn-primary">🔍 查询</button>
+        </form>
+
+        {% if balance_sheet %}
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div class="card" style="text-align: center; padding: 16px; background: #f0faf3;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 4px;">总资产</div>
+                <div style="font-size: 24px; font-weight: 700; color: #27ae60;">
+                    {{ "%.2f"|format(balance_sheet.total_asset_end) }}
+                </div>
+                <div style="font-size: 12px; color: #888; margin-top: 4px;">
+                    期初 {{ "%.2f"|format(balance_sheet.total_asset_start) }}
+                </div>
+            </div>
+            <div class="card" style="text-align: center; padding: 16px; background: #fdf2f2;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 4px;">总负债</div>
+                <div style="font-size: 24px; font-weight: 700; color: #e74c3c;">
+                    {{ "%.2f"|format(balance_sheet.total_liability_end) }}
+                </div>
+                <div style="font-size: 12px; color: #888; margin-top: 4px;">
+                    期初 {{ "%.2f"|format(balance_sheet.total_liability_start) }}
+                </div>
+            </div>
+            <div class="card" style="text-align: center; padding: 16px; background: #eef2fb;">
+                <div style="font-size: 13px; color: #888; margin-bottom: 4px;">净资产</div>
+                <div style="font-size: 24px; font-weight: 700; color: {{ '#27ae60' if balance_sheet.net_worth_end >= 0 else '#e74c3c' }};">
+                    {{ "%.2f"|format(balance_sheet.net_worth_end) }}
+                </div>
+                <div style="font-size: 12px; color: #888; margin-top: 4px;">
+                    期初 {{ "%.2f"|format(balance_sheet.net_worth_start) }}
+                    &nbsp;|&nbsp;
+                    变动
+                    <span style="color: {{ '#27ae60' if balance_sheet.net_worth_change >= 0 else '#e74c3c' }};">
+                        {{ '%+.2f'|format(balance_sheet.net_worth_change) }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        {% set asset_types = {} %}
+        {% for item in balance_sheet.assets %}
+            {% set _ = asset_types.setdefault(item.type, []) %}
+            {% set _ = asset_types[item.type].append(item) %}
+        {% endfor %}
+        {% set liability_types = {} %}
+        {% for item in balance_sheet.liabilities %}
+            {% set _ = liability_types.setdefault(item.type, []) %}
+            {% set _ = liability_types[item.type].append(item) %}
+        {% endfor %}
+
+        {% set type_order = ['CASH', 'SAVING', 'TIME_DEPOSIT', 'CURRENCY_LINKED_DEPOSIT', 'FUND', 'INVESTMENT', 'MPF', 'CREDIT_CARD', 'MORTGAGE'] %}
+
+        {% macro bs_pct(value, total) %}
+            {% if total and total != 0 %}{{ "%.1f%%"|format(value / total * 100) }}{% else %}-{% endif %}
+        {% endmacro %}
+
+        {% set total_asset_start = balance_sheet.total_asset_start %}
+        {% set total_asset_end = balance_sheet.total_asset_end %}
+        {% set total_liability_start = balance_sheet.total_liability_start %}
+        {% set total_liability_end = balance_sheet.total_liability_end %}
+
+        <!-- 资产 -->
+        <div style="margin-bottom: 32px;">
+            <h4 style="color: #27ae60; margin-bottom: 12px;">🟢 资产</h4>
+            {% if balance_sheet.assets %}
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>账户类型</th>
+                            <th>期初余额</th>
+                            <th></th>
+                            <th>期末余额</th>
+                            <th></th>
+                            <th>变动</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in type_order %}
+                        {% if t in asset_types %}
+                        {% set items = asset_types[t] %}
+                        {% set type_start = items|sum(attribute='balance_start') %}
+                        {% set type_end = items|sum(attribute='balance_end') %}
+                        {% set type_change = type_end - type_start %}
+                        <tr class="bs-type-row" onclick="toggleBsDetails(this)" style="cursor: pointer; user-select: none;">
+                            <td>
+                                <span class="bs-toggle">▶</span>
+                                <strong>{{ t }}</strong>
+                                <span style="color: #999; font-size: 12px; margin-left: 6px;">({{ items|length }})</span>
+                            </td>
+                            <td style="text-align: right;">{{ "%.2f"|format(type_start) }}</td>
+                            <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_start, total_asset_start) }}</td>
+                            <td style="text-align: right;">{{ "%.2f"|format(type_end) }}</td>
+                            <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_end, total_asset_end) }}</td>
+                            <td style="text-align: right;">
+                                <span style="color: {{ '#27ae60' if type_change >= 0 else '#e74c3c' }};">
+                                    {{ '%+.2f'|format(type_change) }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% for item in items %}
+                        <tr class="bs-detail" style="display: none; background: #fafafa;">
+                            <td style="padding-left: 28px;">
+                                <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
+                                <span style="font-size: 13px;">{{ item.name }}</span>
+                                <span style="color: #999;">({{ item.currency }})</span>
+                            </td>
+                            <td style="text-align: right;">{{ "%.2f"|format(item.balance_start) }}</td>
+                            <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_start, total_asset_start) }}</td>
+                            <td style="text-align: right;">{{ "%.2f"|format(item.balance_end) }}</td>
+                            <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_end, total_asset_end) }}</td>
+                            <td style="text-align: right;">
+                                <span style="color: {{ '#27ae60' if item.change >= 0 else '#e74c3c' }};">
+                                    {{ '%+.2f'|format(item.change) }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% endif %}
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr style="font-weight: 700; background: #f0faf3;">
+                            <td>资产合计</td>
+                            <td style="text-align: right;">{{ "%.2f"|format(total_asset_start) }}</td>
+                            <td style="text-align: right;">100%</td>
+                            <td style="text-align: right;">{{ "%.2f"|format(total_asset_end) }}</td>
+                            <td style="text-align: right;">100%</td>
+                            <td style="text-align: right;">
+                                {{ '%+.2f'|format(total_asset_end - total_asset_start) }}
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <p style="color: #aaa; text-align: center; padding: 20px;">无资产账户</p>
+            {% endif %}
+        </div>
+
+        <!-- 负债 -->
+        <div>
+            <h4 style="color: #e74c3c; margin-bottom: 12px;">🔴 负债</h4>
+            {% if balance_sheet.liabilities %}
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>账户类型</th>
+                            <th>期初余额</th>
+                            <th></th>
+                            <th>期末余额</th>
+                            <th></th>
+                            <th>变动</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in type_order %}
+                        {% if t in liability_types %}
+                        {% set items = liability_types[t] %}
+                        {% set type_start = items|sum(attribute='balance_start') %}
+                        {% set type_end = items|sum(attribute='balance_end') %}
+                        {% set type_change = type_end - type_start %}
+                        <tr class="bs-type-row" onclick="toggleBsDetails(this)" style="cursor: pointer; user-select: none;">
+                            <td>
+                                <span class="bs-toggle">▶</span>
+                                <strong>{{ t }}</strong>
+                                <span style="color: #999; font-size: 12px; margin-left: 6px;">({{ items|length }})</span>
+                            </td>
+                            <td style="text-align: right;">{{ "%.2f"|format(type_start) }}</td>
+                            <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_start, total_liability_start) }}</td>
+                            <td style="text-align: right;">{{ "%.2f"|format(type_end) }}</td>
+                            <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_end, total_liability_end) }}</td>
+                            <td style="text-align: right;">
+                                <span style="color: {{ '#e74c3c' if type_change > 0 else '#27ae60' }};">
+                                    {{ '%+.2f'|format(type_change) }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% for item in items %}
+                        <tr class="bs-detail" style="display: none; background: #fafafa;">
+                            <td style="padding-left: 28px;">
+                                <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
+                                <span style="font-size: 13px;">{{ item.name }}</span>
+                                <span style="color: #999;">({{ item.currency }})</span>
+                            </td>
+                            <td style="text-align: right;">{{ "%.2f"|format(item.balance_start) }}</td>
+                            <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_start, total_liability_start) }}</td>
+                            <td style="text-align: right;">{{ "%.2f"|format(item.balance_end) }}</td>
+                            <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_end, total_liability_end) }}</td>
+                            <td style="text-align: right;">
+                                <span style="color: {{ '#e74c3c' if item.change > 0 else '#27ae60' }};">
+                                    {{ '%+.2f'|format(item.change) }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% endif %}
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr style="font-weight: 700; background: #fdf2f2;">
+                            <td>负债合计</td>
+                            <td style="text-align: right;">{{ "%.2f"|format(total_liability_start) }}</td>
+                            <td style="text-align: right;">100%</td>
+                            <td style="text-align: right;">{{ "%.2f"|format(total_liability_end) }}</td>
+                            <td style="text-align: right;">100%</td>
+                            <td style="text-align: right;">
+                                {{ '%+.2f'|format(total_liability_end - total_liability_start) }}
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <p style="color: #aaa; text-align: center; padding: 20px;">无负债账户</p>
+            {% endif %}
+        </div>
+        {% elif start_date and end_date %}
+        <p style="text-align: center; color: #aaa; padding: 20px;">暂无数据，请确认日期范围有效</p>
+        {% else %}
+        <p style="text-align: center; color: #aaa; padding: 40px;">请选择日期范围查看资产负债表</p>
+        {% endif %}
     </div>
-    {% endif %}
+
 </div>
 
-<!-- 编辑账户弹窗 -->
-<div id="edit-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
-    <div class="card" style="max-width: 550px; width: 90%;">
-        <h3>✏️ 编辑账户</h3>
-        <form id="edit-form" method="POST">
+<!-- 账户管理 分页 -->
+<div id="tab-accounts-panel" style="{{ 'display: none;' if active_tab != 'accounts' else '' }}">
+    <div class="card">
+        <h3>➕ 添加新账户</h3>
+        <form method="POST" action="{{ url_for('accounts.add_account') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             
             <div class="form-row">
-                <div class="form-group">
-                    <label>账户名称</label>
-                    <input type="text" id="edit-name" name="account_name" required>
+                <div class="form-group" style="flex: 1;">
+                    <label for="account_owner_id">账户拥有者</label>
+                    <select id="account_owner_id" name="account_owner_id">
+                        {% for member in members %}
+                        <option value="{{ member.owner_id }}" 
+                                {% if member.owner_id == current_owner.owner_id %}selected{% endif %}>
+                            {{ member.owner_name }}
+                            {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
+                            {% if member.owner_id == current_owner.owner_id %}(我){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <div class="form-group">
-                    <label>别名</label>
-                    <input type="text" id="edit-other" name="account_other_name">
+                <div class="form-group" style="flex: 1;">
+                    <label for="account_type">账户类型 *</label>
+                    <select id="account_type" name="account_type" required>
+                        {% for type in account_types %}
+                        <option value="{{ type.name }}">{{ type.value }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
-            </div>
-            
-            <div class="form-group">
-                <label>机构/钱包</label>
-                <input type="text" id="edit-custodian" name="account_custodian" required>
             </div>
             
             <div class="form-row">
-                <div class="form-group">
-                    <label>创建日期</label>
-                    <input type="date" id="edit-create-date" name="account_create_date">
-                </div>
-                <div class="form-group">
-                    <label>关闭日期</label>
-                    <input type="date" id="edit-close-date" name="account_close_date">
+                <div class="form-group" style="flex: 1;">
+                    <label for="account_custodian">机构/钱包 *</label>
+                    <input type="text" id="account_custodian" name="account_custodian" 
+                           placeholder="例如：中信银行、八达通、支付宝" required>
                 </div>
             </div>
             
-            {% if current_user.is_adult() %}
-            <div class="form-group">
-                <label>账户拥有者</label>
-                <select id="edit-owner-id" name="account_owner_id">
-                    {% for member in members %}
-                    <option value="{{ member.owner_id }}">
-                        {{ member.owner_name }}
-                        {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
-                    </option>
-                    {% endfor %}
-                </select>
+            <div class="form-row">
+                <div class="form-group" style="flex: 1; max-width: 140px;">
+                    <label for="currency">货币</label>
+                    <select id="currency" name="currency">
+                        <option value="HKD">HKD - 港币</option>
+                        <option value="USD">USD - 美元</option>
+                        <option value="CNY">CNY - 人民币</option>
+                        <option value="JPY">JPY - 日元</option>
+                        <option value="GBP">GBP - 英镑</option>
+                        <option value="EUR">EUR - 欧元</option>
+                        <option value="AUD">AUD - 澳元</option>
+                        <option value="SGD">SGD - 新加坡元</option>
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label for="account_name">账户名称 *</label>
+                    <input type="text" id="account_name" name="account_name" 
+                           placeholder="例如：中信储蓄卡" required>
+                </div>
             </div>
-            {% endif %}
             
-            <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <button type="submit" class="btn btn-primary">💾 保存</button>
-                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+            <div class="form-row">
+                <div class="form-group" style="flex: 1;">
+                    <label for="account_other_name">别名</label>
+                    <input type="text" id="account_other_name" name="account_other_name" 
+                           placeholder="可选别名">
+                </div>
             </div>
+            
+            <div class="form-row">
+                <div class="form-group" style="flex: 1;">
+                    <label for="account_create_date">创建日期</label>
+                    <input type="date" id="account_create_date" name="account_create_date" 
+                           value="{{ today_date() }}">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label for="account_close_date">关闭日期</label>
+                    <input type="date" id="account_close_date" name="account_close_date">
+                    <small style="color: #aaa;">如已关闭可填写</small>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">✓ 添加账户</button>
         </form>
     </div>
-</div>
 
-<!-- 删除账户确认弹窗 -->
-<div id="delete-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1001; justify-content: center; align-items: center;">
-    <div class="card" style="max-width: 550px; width: 90%;">
-        <h3>⚠ 确认删除账户</h3>
-        <div id="delete-content">
-            <p style="text-align: center; color: #888;">正在检查关联交易...</p>
+    <div class="card">
+        <h3>📋 账户列表 ({{ accounts|length }})</h3>
+        
+        {% if accounts %}
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>类型</th>
+                        <th>拥有者</th>
+                        <th>机构</th>
+                        <th>货币</th>
+                        <th>名称</th>
+                        <th>别名</th>
+                        <th>创建日期</th>
+                        <th>关闭日期</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for account in accounts %}
+                    <tr>
+                        <td>{{ account.account_type.value }}</td>
+                        <td>
+                            {{ account.owner.owner_name }}
+                            {% if not account.owner.user %}
+                                <span class="badge" style="background: #d4e6f1; color: #2980b9;">家庭</span>
+                            {% elif account.owner.owner_id == current_owner.owner_id %}
+                                <span class="badge" style="background: #e94560; color: white;">我</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ account.account_custodian }}</td>
+                        <td>{{ account.account_currency_name }}</td>
+                        <td><strong>{{ account.account_name }}</strong></td>
+                        <td>{{ account.account_other_name or '-' }}</td>
+                        <td>{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '-' }}</td>
+                        <td>{{ account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '-' }}</td>
+                        <td>
+                            {% if account.account_close_date %}
+                                <span class="badge" style="background: #fadbd8; color: #e74c3c;">已关闭</span>
+                            {% else %}
+                                <span class="badge" style="background: #d5f5e3; color: #27ae60;">使用中</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button onclick="openEditModal(this)" 
+                                    data-id="{{ account.account_id }}"
+                                    data-name="{{ account.account_name }}"
+                                    data-other="{{ account.account_other_name or '' }}"
+                                    data-custodian="{{ account.account_custodian }}"
+                                    data-createdate="{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '' }}"
+                                    data-closedate="{{ account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '' }}"
+                                    data-ownerid="{{ account.account_owner_id }}"
+                                    class="btn btn-secondary btn-sm">✏️ 编辑</button>
+                            <button onclick="confirmDeleteAccount({{ account.account_id }})" 
+                                    class="btn btn-danger btn-sm">🗑 删除</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 40px; color: #999;">
+            <p style="font-size: 48px;">🏦</p>
+            <p>暂无账户，请添加你的第一个账户</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 编辑账户弹窗 -->
+    <div id="edit-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+        <div class="card" style="max-width: 550px; width: 90%;">
+            <h3>✏️ 编辑账户</h3>
+            <form id="edit-form" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>账户名称</label>
+                        <input type="text" id="edit-name" name="account_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>别名</label>
+                        <input type="text" id="edit-other" name="account_other_name">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>机构/钱包</label>
+                    <input type="text" id="edit-custodian" name="account_custodian" required>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>创建日期</label>
+                        <input type="date" id="edit-create-date" name="account_create_date">
+                    </div>
+                    <div class="form-group">
+                        <label>关闭日期</label>
+                        <input type="date" id="edit-close-date" name="account_close_date">
+                    </div>
+                </div>
+                
+                {% if current_user.is_adult() %}
+                <div class="form-group">
+                    <label>账户拥有者</label>
+                    <select id="edit-owner-id" name="account_owner_id">
+                        {% for member in members %}
+                        <option value="{{ member.owner_id }}">
+                            {{ member.owner_name }}
+                            {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                
+                <div style="display: flex; gap: 12px; margin-top: 16px;">
+                    <button type="submit" class="btn btn-primary">💾 保存</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 删除账户确认弹窗 -->
+    <div id="delete-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1001; justify-content: center; align-items: center;">
+        <div class="card" style="max-width: 550px; width: 90%;">
+            <h3>⚠ 确认删除账户</h3>
+            <div id="delete-content">
+                <p style="text-align: center; color: #888;">正在检查关联交易...</p>
+            </div>
         </div>
     </div>
 </div>
 
+<style>
+.tab-btn.active {
+    color: #1a1a2e !important;
+    border-bottom-color: #1a1a2e !important;
+}
+</style>
+
 <script>
+    function toggleBsDetails(row) {
+        const toggle = row.querySelector('.bs-toggle');
+        let next = row.nextElementSibling;
+        const expanded = toggle.textContent === '▼';
+        toggle.textContent = expanded ? '▶' : '▼';
+        while (next && next.classList.contains('bs-detail')) {
+            next.style.display = expanded ? 'none' : 'table-row';
+            next = next.nextElementSibling;
+        }
+    }
+
+    function switchAccountTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-' + tab).classList.add('active');
+        
+        document.getElementById('tab-finance-panel').style.display = tab === 'finance' ? 'block' : 'none';
+        document.getElementById('tab-accounts-panel').style.display = tab === 'accounts' ? 'block' : 'none';
+
+        var url = new URL(window.location);
+        url.searchParams.set('tab', tab);
+        window.history.replaceState({}, '', url);
+    }
+
     function openEditModal(btn) {
         const id = btn.dataset.id;
         document.getElementById('edit-form').action = '/accounts/' + id + '/edit';

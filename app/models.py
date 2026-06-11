@@ -19,6 +19,9 @@ class AccountType(str, Enum):
     MORTGAGE = 'MORTGAGE'
     MPF = 'MPF'
 
+    @property
+    def is_liability(self):
+        return self in (AccountType.CREDIT_CARD, AccountType.MORTGAGE)
 
 class CategoryType(str, Enum):
     INCOME = 'I'
@@ -296,13 +299,19 @@ class TimeDeposit(db.Model):
 
 class CurrencyConversion(db.Model):
     __tablename__ = 'currency_conversion'
-    
+
     record_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     currency_name_lhs = db.Column(db.String(3), nullable=False)
-    currency_name_rhs = db.Column(db.String(3), nullable=False)
+    currency_name_rhs = db.Column(db.String(3), nullable=False, default='HKD')
     currency_conversion_rate = db.Column(db.Float, nullable=False)
     currency_conversion_date = db.Column(db.Date, nullable=False)
-    
+
+    __table_args__ = (
+        db.UniqueConstraint('currency_name_lhs', 'currency_name_rhs', 'currency_conversion_date',
+                            name='uq_currency_rate_date'),
+        {'extend_existing': True},
+    )
+
     def __repr__(self):
         return f'<FX {self.currency_name_lhs}/{self.currency_name_rhs} = {self.currency_conversion_rate}>'
     
@@ -356,3 +365,5 @@ class BluecoinsCategoryMapping(db.Model):
     
     def __repr__(self):
         return f'<BC CategoryMap {self.bluecoins_group}/{self.bluecoins_category}/{self.bluecoins_title} → Category {self.category_id}>'
+
+
