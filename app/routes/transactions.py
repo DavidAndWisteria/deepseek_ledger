@@ -2,9 +2,24 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app import db
-from app.models import Transaction, Account, Category, Owner, TransactionStatus
+from app.models import Transaction, Account, Category, Owner, TransactionStatus, AccountBalance
 
 transactions = Blueprint('transactions', __name__)
+
+
+def invalidate_account_balances(account_id, from_datetime):
+    """删除指定账户从指定日期起的所有缓存日终余额记录"""
+    if not account_id:
+        return
+    AccountBalance.query.filter(
+        AccountBalance.account_id == account_id,
+        AccountBalance.as_of_dt >= from_datetime.date()
+    ).delete(synchronize_session=False)
+
+
+def _ensure_utc(dt):
+    """确保datetime带UTC时区信息，用于安全比较"""
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 
 def get_user_owner():
@@ -242,6 +257,10 @@ def add_transaction():
         trans_out.trans_counter_id = trans_in.trans_id
         db.session.add(trans_out)
     
+    invalidate_account_balances(account_id, trans_datetime)
+    if trans_type == 'transfer':
+        invalidate_account_balances(to_account_id, trans_datetime)
+    
     db.session.commit()
     flash('交易添加成功')
     return redirect(url_for('transactions.dashboard', tab='list-tab'))
@@ -261,12 +280,22 @@ def delete_transaction(trans_id):
         flash('无权删除此交易')
         return redirect(url_for('transactions.dashboard'))
     
+    affected_account_ids = {transaction.trans_account_id}
+    affected_datetime = transaction.trans_datetime
+    
     if transaction.trans_counter_id:
         counter = db.session.get(Transaction, transaction.trans_counter_id)
         if counter:
+            affected_account_ids.add(counter.trans_account_id)
+            if counter.trans_datetime < affected_datetime:
+                affected_datetime = counter.trans_datetime
             db.session.delete(counter)
     
     db.session.delete(transaction)
+    
+    for acct_id in affected_account_ids:
+        invalidate_account_balances(acct_id, affected_datetime)
+    
     db.session.commit()
     flash('交易已删除')
     return redirect(url_for('transactions.dashboard', tab='list-tab'))
@@ -323,6 +352,58 @@ def batch_verify():
     return redirect(url_for('transactions.dashboard', tab='list-tab'))
 
 
+@transactions.route('/batch-delete', methods=['POST'])
+@login_required
+def batch_delete():
+    """批量删除选中的交易"""
+    owner = get_user_owner()
+    if not owner:
+        flash('请先设置个人信息')
+        return redirect(url_for('transactions.dashboard'))
+
+    trans_ids = request.form.getlist('trans_ids', type=int)
+    if not trans_ids:
+        flash('请选择要删除的交易')
+        return redirect(url_for('transactions.dashboard'))
+
+    affected = {}  # account_id -> earliest_datetime
+    transactions_to_delete = []
+    count = 0
+    for trans_id in trans_ids:
+        transaction = db.session.get(Transaction, trans_id)
+        if transaction and transaction.trans_owner_id == owner.owner_id:
+            acct_id = transaction.trans_account_id
+            dt = transaction.trans_datetime
+            if acct_id not in affected or dt < affected[acct_id]:
+                affected[acct_id] = dt
+
+            if transaction.trans_counter_id:
+                counter = db.session.get(Transaction, transaction.trans_counter_id)
+                if counter:
+                    c_acct = counter.trans_account_id
+                    c_dt = counter.trans_datetime
+                    if c_acct not in affected or c_dt < affected[c_acct]:
+                        affected[c_acct] = c_dt
+                    counter.trans_counter_id = None
+                    transactions_to_delete.append(counter)
+
+            transaction.trans_counter_id = None
+            transactions_to_delete.append(transaction)
+            count += 1
+
+    db.session.flush()
+
+    for t in transactions_to_delete:
+        db.session.delete(t)
+
+    for acct_id, dt in affected.items():
+        invalidate_account_balances(acct_id, dt)
+
+    db.session.commit()
+    flash(f'已删除 {count} 笔交易')
+    return redirect(url_for('transactions.dashboard', tab='list-tab'))
+
+
 @transactions.route('/edit/<int:trans_id>', methods=['POST'])
 @login_required
 def edit_transaction(trans_id):
@@ -350,13 +431,22 @@ def edit_transaction(trans_id):
     
     is_pair = transaction.trans_counter_id is not None
     
+    old_account_id = transaction.trans_account_id
+    old_datetime = transaction.trans_datetime
+    old_counter_account_id = None
+    old_counter_datetime = None
+    
     if not is_pair:
         transaction.trans_amount = amount if transaction.trans_amount > 0 else -amount
         transaction.trans_account_id = account_id
         transaction.trans_category_id = category_id
         transaction.trans_desc = description
+        counter = None
     else:
         counter = db.session.get(Transaction, transaction.trans_counter_id)
+        if counter:
+            old_counter_account_id = counter.trans_account_id
+            old_counter_datetime = counter.trans_datetime
         if transaction.trans_amount < 0:
             transaction.trans_amount = -amount
             if counter:
@@ -375,15 +465,30 @@ def edit_transaction(trans_id):
             counter.trans_category_id = category_id
             counter.trans_desc = description
     
+    new_datetime = old_datetime
     try:
-        trans_datetime = datetime.strptime(
+        new_datetime = datetime.strptime(
             f'{trans_date} {trans_time}', '%Y-%m-%d %H:%M'
         ).replace(tzinfo=timezone.utc)
-        transaction.trans_datetime = trans_datetime
+        transaction.trans_datetime = new_datetime
         if is_pair and counter:
-            counter.trans_datetime = trans_datetime
+            counter.trans_datetime = new_datetime
     except ValueError:
         pass
+    
+    earliest_dt = old_datetime if _ensure_utc(old_datetime) < _ensure_utc(new_datetime) else new_datetime
+    
+    invalidate_account_balances(old_account_id, earliest_dt)
+    if account_id != old_account_id:
+        invalidate_account_balances(account_id, earliest_dt)
+    
+    if is_pair and counter:
+        if old_counter_account_id:
+            invalidate_account_balances(old_counter_account_id, earliest_dt)
+            if counter.trans_account_id != old_counter_account_id:
+                invalidate_account_balances(counter.trans_account_id, earliest_dt)
+        else:
+            invalidate_account_balances(counter.trans_account_id, earliest_dt)
     
     db.session.commit()
     flash('交易更新成功')

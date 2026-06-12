@@ -210,14 +210,14 @@
 <div id="list-tab" class="tab-content {{ 'active' if active_tab == 'list-tab' else '' }}">
     <div class="card">
         {% if daily_sorted %}
-        {% if unverified_count > 0 %}
-        <div style="margin-bottom: 12px;">
-            <form id="batch-form" method="POST" action="{{ url_for('transactions.batch_verify') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-secondary">✓ 批量核对选中项（共 {{ unverified_count }} 笔待核对）</button>
-            </form>
-        </div>
-        {% endif %}
+        <form id="batch-form" method="POST" action="{{ url_for('transactions.batch_verify') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="submit" class="btn btn-secondary">✓ 批量核对选中项{% if unverified_count > 0 %}（共 {{ unverified_count }} 笔待核对）{% endif %}</button>
+                <button type="submit" class="btn" style="background: #fadbd8; color: #e74c3c;"
+                        formaction="{{ url_for('transactions.batch_delete') }}"
+                        onclick="return confirm('确定要批量删除选中的交易吗？\n此操作不可恢复！\n如果是转账交易，配对记录也会同时删除。');">🗑 批量删除选中项</button>
+            </div>
         <div style="overflow-x: auto;">
             <table>
                 <thead>
@@ -249,9 +249,7 @@
                     {% for t in day['transactions'] %}
                     <tr>
                         <td style="text-align: center;">
-                            {% if t.trans_status.value == 'UNVERIFIED' %}
-                            <input type="checkbox" name="trans_ids" value="{{ t.trans_id }}" class="trans-checkbox" form="batch-form" style="width: 15px; height: 15px; cursor: pointer;">
-                            {% endif %}
+                            <input type="checkbox" name="trans_ids" value="{{ t.trans_id }}" class="trans-checkbox" style="width: 15px; height: 15px; cursor: pointer;">
                         </td>
                         <td style="white-space: nowrap;">{{ t.trans_datetime.strftime('%H:%M') }}</td>
                         <td>
@@ -331,8 +329,9 @@
                     {% endfor %}
                     {% endfor %}
                 </tbody>
-            </table>
+                </table>
         </div>
+        </form>
         {% else %}
         <div style="text-align: center; padding: 60px; color: #999;">
             <p style="font-size: 48px;">📭</p>
