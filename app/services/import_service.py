@@ -550,7 +550,6 @@ class ImportService:
                     
                     if abs(amount1 + amount2) < 0.01 and amount1 != amount2:
                         pairs[i] = i + 1
-                        processed.add(i)
                         processed.add(i + 1)
                 except (ValueError, TypeError):
                     pass
@@ -771,13 +770,13 @@ class ImportService:
     
     def _get_transfer_category_id(self):
         """获取或创建转账分类"""
-        cat = Category.query.filter_by(category_type=CategoryType.T).first()
+        cat = Category.query.filter_by(category_type=CategoryType.TRANSFER).first()
         if cat:
             return cat.category_id
         
         cat = Category(
             category_name='账户转账', category_class='转账',
-            category_subclass='内部转账', category_type=CategoryType.T
+            category_subclass='内部转账', category_type=CategoryType.TRANSFER
         )
         db.session.add(cat)
         db.session.flush()
