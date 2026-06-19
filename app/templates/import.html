@@ -402,8 +402,13 @@
 {% else %}
 <div class="card" style="background: #d5f5e3; text-align: center; padding: 40px;">
     <p style="font-size: 48px; margin-bottom: 16px;">🎉</p>
-    <h3>全部交易已成功导入！</h3>
-    <a href="{{ url_for('importer.import_page') }}" class="btn btn-primary" style="margin-top: 16px;">返回导入页面</a>
+    <h3>全部交易已成功匹配！</h3>
+    <p style="color: #666; margin-bottom: 20px;">所有 {{ summary.transactions.success }} 笔交易均已匹配，点击下方按钮完成导入。</p>
+    <form method="POST" action="{{ url_for('importer.confirm_transactions') }}" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-primary" style="font-size: 16px; padding: 12px 32px;">✅ 确认导入</button>
+    </form>
+    <a href="{{ url_for('importer.import_page') }}" class="btn btn-secondary" style="margin-top: 0; margin-left: 8px;">返回</a>
 </div>
 {% endif %}
 

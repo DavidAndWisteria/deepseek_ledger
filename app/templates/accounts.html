@@ -153,6 +153,9 @@
                                 <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
                                 <span style="font-size: 13px;">{{ item.name }}</span>
                                 <span style="color: #999;">({{ item.currency }})</span>
+                                {% if item._has_fx and item._account_fx_amount %}
+                                <br><span style="font-size: 11px; color: #666;">外汇: {{ item.currency }} {{ "%.2f"|format(item._account_fx_amount) }}
+                                {% endif %}
                             </td>
                             <td style="text-align: right;">{{ "%.2f"|format(item.balance_start) }}</td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_start, total_asset_start) }}</td>
@@ -232,6 +235,9 @@
                                 <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
                                 <span style="font-size: 13px;">{{ item.name }}</span>
                                 <span style="color: #999;">({{ item.currency }})</span>
+                                {% if item._has_fx and item._account_fx_amount %}
+                                <br><span style="font-size: 11px; color: #666;">外汇: {{ item.currency }} {{ "%.2f"|format(item._account_fx_amount) }}</span>
+                                {% endif %}
                             </td>
                             <td style="text-align: right;">{{ "%.2f"|format(item.balance_start) }}</td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_start, total_liability_start) }}</td>

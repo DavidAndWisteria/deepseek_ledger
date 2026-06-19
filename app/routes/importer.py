@@ -104,7 +104,7 @@ def upload_transactions():
         skipped, missing_accounts, missing_categories = service.get_skipped_transactions()
         summary = service.get_summary()
     except Exception as e:
-        db.session.rollback()
+        savepoint.rollback()
         flash('文件解析失败，请检查格式')
         return redirect(url_for('importer.import_page'))
     
@@ -297,11 +297,6 @@ def confirm_transactions():
         
         db.session.commit()
     
-    print(f"DEBUG manual_mappings: accounts={manual_mappings['accounts']}")
-    print(f"DEBUG manual_mappings: categories={manual_mappings['categories']}")
-    print(f"DEBUG skipped_accounts={skipped_accounts}")
-    print(f"DEBUG skipped_categories={skipped_categories}")
-
     result = service.import_transactions_csv(
         content, manual_mappings,
         skipped_accounts=skipped_accounts,

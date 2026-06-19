@@ -8,6 +8,7 @@ from app.models import (
     AccountType, CategoryType, TransactionStatus,
     BluecoinsAccountMapping, BluecoinsCategoryMapping
 )
+from app.routes.accounts import get_fx_rate_to_hkd
 
 
 class ImportService:
@@ -467,8 +468,10 @@ class ImportService:
                 self.skipped_transactions.append(row)
                 continue
             
+            savepoint = db.session.begin_nested()
             try:
                 result = self._import_single_transaction(row, rows, i, transfer_pairs)
+                savepoint.commit()
                 
                 if result == 'success':
                     self.results['transactions']['success'] += 1
@@ -478,7 +481,7 @@ class ImportService:
                 elif result == 'transfer_pair':
                     self.results['transactions']['success'] += 2
             except Exception as e:
-                db.session.rollback()
+                savepoint.rollback()
                 self.results['transactions']['failed'] += 1
                 self.results['transactions']['details'].append({
                     'row': i + 1, 'status': 'failed', 'reason': str(e)
@@ -591,23 +594,52 @@ class ImportService:
             return 'skipped'
         
         trans_status = TransactionStatus.UNVERIFIED
-        
+
         if bc_type == '转账' and index in transfer_pairs:
             return self._import_transfer_pair(
                 row, all_rows, index, transfer_pairs,
                 category_id, currency, trans_status, trans_datetime, description
             )
-        
-        transaction = Transaction(
-            trans_datetime=trans_datetime,
-            trans_desc=description if description else '',
-            trans_amount=amount,
-            trans_currency_name=currency,
-            trans_account_id=account_id,
-            trans_category_id=category_id,
-            trans_owner_id=self.owner.owner_id,
-            trans_status=trans_status
-        )
+
+        kwargs = {
+            'trans_datetime': trans_datetime,
+            'trans_desc': description if description else '',
+            'trans_account_id': account_id,
+            'trans_category_id': category_id,
+            'trans_owner_id': self.owner.owner_id,
+            'trans_status': trans_status
+        }
+
+        if currency != 'HKD' and bc_type != '转账':
+            file_rate_str = row.get('汇率', '').strip()
+            try:
+                file_rate = float(file_rate_str) if file_rate_str else 0.0
+            except ValueError:
+                file_rate = 0.0
+
+            if file_rate > 0:
+                effective_rate = file_rate
+                stored_rate = file_rate
+            else:
+                spot_rate = get_fx_rate_to_hkd(currency, trans_datetime.date())
+                effective_rate = 1.0 / spot_rate
+                stored_rate = 0.0
+
+            hkd_amount = round(amount / effective_rate, 2)
+            kwargs.update({
+                'trans_amount': hkd_amount,
+                'trans_currency_name': 'HKD',
+                'trans_fx_currency_name': currency,
+                'trans_fx_amount': amount,
+                'trans_fx_rate': stored_rate,
+            })
+        else:
+            kwargs.update({
+                'trans_amount': amount,
+                'trans_currency_name': currency,
+            })
+
+        transaction = Transaction(**kwargs)
         db.session.add(transaction)
         return 'success'
     
@@ -670,7 +702,6 @@ class ImportService:
         return 'transfer_pair'
     
     def _match_account(self, bluecoins_name):
-        print(f"DEBUG _match_account: looking for '{bluecoins_name}', in map={bluecoins_name in self.account_map}")
         """匹配账户，返回 account_id 或 None"""
         if bluecoins_name in self.account_map:
             return self.account_map[bluecoins_name]
@@ -703,7 +734,6 @@ class ImportService:
         return None
     
     def _match_category(self, bc_type, group, category_name, title, amount=None):
-        print(f"DEBUG _match_category: looking for {bc_type}/{group}/{category_name}/{title}")
         """匹配分类，返回 category_id 或 None"""
         for key, cat_id in {**self.category_map, **self.new_category_mappings}.items():
             year, bt, g, c, t = key
@@ -735,7 +765,7 @@ class ImportService:
                 self.category_map[key] = cat.category_id
                 return cat.category_id
             except Exception:
-                db.session.rollback()
+                pass
         
         return None
     

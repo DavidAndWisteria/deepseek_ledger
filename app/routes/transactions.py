@@ -3,6 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app import db
 from app.models import Transaction, Account, Category, Owner, TransactionStatus, AccountBalance
+from app.routes.accounts import get_fx_rate_to_hkd
 
 transactions = Blueprint('transactions', __name__)
 
@@ -59,6 +60,30 @@ def get_visible_transactions_query(start_date=None, end_date=None, status_filter
         query = query.filter_by(trans_account_id=account_id)
     
     return query.order_by(Transaction.trans_datetime.desc())
+
+
+def _get_filter_params():
+    """从 request.args 或 request.form 获取当前筛选参数"""
+    def get_param(key):
+        return request.args.get(key, request.form.get(key, ''))
+
+    return {
+        k: v for k, v in {
+            'start_date': get_param('start_date'),
+            'end_date': get_param('end_date'),
+            'status': get_param('status'),
+            'category_id': get_param('category_id'),
+            'account_id': get_param('account_id'),
+        }.items() if v
+    }
+
+
+def _dashboard_redirect(**extra):
+    """重定向到仪表盘，保留筛选参数，默认显示列表标签页"""
+    params = {'tab': 'list-tab'}
+    params.update(_get_filter_params())
+    params.update(extra)
+    return redirect(url_for('transactions.dashboard', **params))
 
 
 @transactions.route('/')
@@ -164,59 +189,98 @@ def add_transaction():
     if not account_id or not category_id or not amount:
         flash('请填写完整信息')
         return redirect(url_for('transactions.dashboard'))
-    
+
     if amount <= 0:
         flash('金额必须大于0')
         return redirect(url_for('transactions.dashboard'))
-    
+
     try:
         trans_datetime = datetime.strptime(
             f'{trans_date} {trans_time}', '%Y-%m-%d %H:%M'
         ).replace(tzinfo=timezone.utc)
     except ValueError:
         trans_datetime = datetime.now(timezone.utc)
-    
+
     category = db.session.get(Category, category_id)
     account = db.session.get(Account, account_id)
-    
+
     if not category or not account:
         flash('无效的分类或账户')
         return redirect(url_for('transactions.dashboard'))
-    
+
+    fx_rate_input = None
+    fx_auto = False
+    is_fx = (currency != 'HKD' and trans_type != 'transfer')
+
+    if is_fx:
+        fx_rate_input = request.form.get('fx_rate', type=float)
+        fx_auto = request.form.get('fx_auto', '0') == '1'
+        if fx_rate_input is None:
+            fx_rate_input = 0.0
+
+        spot_rate = get_fx_rate_to_hkd(currency, trans_datetime.date())
+        inv_spot_rate = 1.0 / spot_rate
+        effective_rate = fx_rate_input if (fx_rate_input > 0 and not fx_auto) else inv_spot_rate
+        stored_fx_rate = fx_rate_input if (fx_rate_input > 0 and not fx_auto) else 0.0
+        hkd_amount = round(amount / effective_rate, 2)
+    else:
+        hkd_amount = amount
+
     if trans_type == 'income':
-        transaction = Transaction(
-            trans_datetime=trans_datetime,
-            trans_desc=description,
-            trans_amount=amount,
-            trans_currency_name=currency,
-            trans_account_id=account_id,
-            trans_category_id=category_id,
-            trans_owner_id=owner.owner_id
-        )
+        kwargs = {
+            'trans_datetime': trans_datetime,
+            'trans_desc': description,
+            'trans_amount': hkd_amount,
+            'trans_currency_name': 'HKD' if is_fx else currency,
+            'trans_account_id': account_id,
+            'trans_category_id': category_id,
+            'trans_owner_id': owner.owner_id,
+        }
+        if is_fx:
+            kwargs.update({
+                'trans_fx_currency_name': currency,
+                'trans_fx_amount': amount,
+                'trans_fx_rate': stored_fx_rate,
+            })
+        transaction = Transaction(**kwargs)
         db.session.add(transaction)
-    
+
     elif trans_type == 'expense':
-        transaction = Transaction(
-            trans_datetime=trans_datetime,
-            trans_desc=description,
-            trans_amount=-amount,
-            trans_currency_name=currency,
-            trans_account_id=account_id,
-            trans_category_id=category_id,
-            trans_owner_id=owner.owner_id
-        )
+        kwargs = {
+            'trans_datetime': trans_datetime,
+            'trans_desc': description,
+            'trans_amount': -hkd_amount,
+            'trans_currency_name': 'HKD' if is_fx else currency,
+            'trans_account_id': account_id,
+            'trans_category_id': category_id,
+            'trans_owner_id': owner.owner_id,
+        }
+        if is_fx:
+            kwargs.update({
+                'trans_fx_currency_name': currency,
+                'trans_fx_amount': -amount,
+                'trans_fx_rate': stored_fx_rate,
+            })
+        transaction = Transaction(**kwargs)
         db.session.add(transaction)
-    
+
     elif trans_type == 'special':
-        transaction = Transaction(
-            trans_datetime=trans_datetime,
-            trans_desc=description,
-            trans_amount=amount,
-            trans_currency_name=currency,
-            trans_account_id=account_id,
-            trans_category_id=category_id,
-            trans_owner_id=owner.owner_id
-        )
+        kwargs = {
+            'trans_datetime': trans_datetime,
+            'trans_desc': description,
+            'trans_amount': hkd_amount,
+            'trans_currency_name': 'HKD' if is_fx else currency,
+            'trans_account_id': account_id,
+            'trans_category_id': category_id,
+            'trans_owner_id': owner.owner_id,
+        }
+        if is_fx:
+            kwargs.update({
+                'trans_fx_currency_name': currency,
+                'trans_fx_amount': amount,
+                'trans_fx_rate': stored_fx_rate,
+            })
+        transaction = Transaction(**kwargs)
         db.session.add(transaction)
     
     elif trans_type == 'transfer':
@@ -263,7 +327,7 @@ def add_transaction():
     
     db.session.commit()
     flash('交易添加成功')
-    return redirect(url_for('transactions.dashboard', tab='list-tab'))
+    return _dashboard_redirect()
 
 
 @transactions.route('/delete/<int:trans_id>', methods=['POST'])
@@ -273,12 +337,12 @@ def delete_transaction(trans_id):
     transaction = db.session.get(Transaction, trans_id)
     if not transaction:
         flash('交易不存在')
-        return redirect(url_for('transactions.dashboard'))
+        return _dashboard_redirect()
     
     owner = get_user_owner()
     if not owner or transaction.trans_owner_id != owner.owner_id:
         flash('无权删除此交易')
-        return redirect(url_for('transactions.dashboard'))
+        return _dashboard_redirect()
     
     affected_account_ids = {transaction.trans_account_id}
     affected_datetime = transaction.trans_datetime
@@ -298,7 +362,7 @@ def delete_transaction(trans_id):
     
     db.session.commit()
     flash('交易已删除')
-    return redirect(url_for('transactions.dashboard', tab='list-tab'))
+    return _dashboard_redirect()
 
 
 @transactions.route('/status/<int:trans_id>/<status>', methods=['POST'])
@@ -308,12 +372,12 @@ def update_status(trans_id, status):
     transaction = db.session.get(Transaction, trans_id)
     if not transaction:
         flash('交易不存在')
-        return redirect(url_for('transactions.dashboard'))
+        return _dashboard_redirect()
     
     owner = get_user_owner()
     if not owner or transaction.trans_owner_id != owner.owner_id:
         flash('无权操作此交易')
-        return redirect(url_for('transactions.dashboard'))
+        return _dashboard_redirect()
     
     try:
         transaction.trans_status = TransactionStatus(status)
@@ -322,7 +386,7 @@ def update_status(trans_id, status):
     except ValueError:
         flash('无效的状态')
     
-    return redirect(url_for('transactions.dashboard', tab='list-tab'))
+    return _dashboard_redirect()
 
 
 @transactions.route('/batch-verify', methods=['POST'])
@@ -332,12 +396,12 @@ def batch_verify():
     owner = get_user_owner()
     if not owner:
         flash('请先设置个人信息')
-        return redirect(url_for('transactions.dashboard'))
+        return _dashboard_redirect()
     
     trans_ids = request.form.getlist('trans_ids', type=int)
     if not trans_ids:
         flash('请选择要核对的交易')
-        return redirect(url_for('transactions.dashboard'))
+        return _dashboard_redirect()
     
     count = 0
     for trans_id in trans_ids:
@@ -349,7 +413,7 @@ def batch_verify():
     
     db.session.commit()
     flash(f'已核对 {count} 笔交易')
-    return redirect(url_for('transactions.dashboard', tab='list-tab'))
+    return _dashboard_redirect()
 
 
 @transactions.route('/batch-delete', methods=['POST'])
@@ -359,12 +423,12 @@ def batch_delete():
     owner = get_user_owner()
     if not owner:
         flash('请先设置个人信息')
-        return redirect(url_for('transactions.dashboard'))
+        return _dashboard_redirect()
 
     trans_ids = request.form.getlist('trans_ids', type=int)
     if not trans_ids:
         flash('请选择要删除的交易')
-        return redirect(url_for('transactions.dashboard'))
+        return _dashboard_redirect()
 
     affected = {}  # account_id -> earliest_datetime
     transactions_to_delete = []
@@ -401,7 +465,7 @@ def batch_delete():
 
     db.session.commit()
     flash(f'已删除 {count} 笔交易')
-    return redirect(url_for('transactions.dashboard', tab='list-tab'))
+    return _dashboard_redirect()
 
 
 @transactions.route('/edit/<int:trans_id>', methods=['POST'])
@@ -411,33 +475,75 @@ def edit_transaction(trans_id):
     transaction = db.session.get(Transaction, trans_id)
     if not transaction:
         flash('交易不存在')
-        return redirect(url_for('transactions.dashboard'))
-    
+        return _dashboard_redirect()
+
     owner = get_user_owner()
     if not owner or transaction.trans_owner_id != owner.owner_id:
         flash('无权编辑此交易')
-        return redirect(url_for('transactions.dashboard'))
-    
+        return _dashboard_redirect()
+
     amount = request.form.get('amount', type=float)
     category_id = request.form.get('category_id', type=int)
     account_id = request.form.get('account_id', type=int)
     description = request.form.get('description', '')
     trans_date = request.form.get('trans_date', '')
     trans_time = request.form.get('trans_time', '00:00')
-    
+
     if not account_id or not category_id or not amount:
         flash('请填写完整信息')
-        return redirect(url_for('transactions.dashboard'))
-    
+        return _dashboard_redirect()
+
     is_pair = transaction.trans_counter_id is not None
-    
+
     old_account_id = transaction.trans_account_id
     old_datetime = transaction.trans_datetime
     old_counter_account_id = None
     old_counter_datetime = None
-    
+
+    currency = request.form.get('currency', transaction.trans_currency_name)
+    has_fx = transaction.trans_fx_currency_name is not None
+    fx_rate_provided = request.form.get('fx_rate') is not None
+
     if not is_pair:
-        transaction.trans_amount = amount if transaction.trans_amount > 0 else -amount
+        sign = 1 if transaction.trans_amount > 0 else -1
+        hkd_amount = amount
+
+        if has_fx:
+            if fx_rate_provided:
+                fx_rate_input = request.form.get('fx_rate', type=float) or 0.0
+                spot_rate = get_fx_rate_to_hkd(transaction.trans_fx_currency_name, transaction.trans_datetime.date())
+                inv_spot_rate = 1.0 / spot_rate
+                effective_rate = fx_rate_input if fx_rate_input > 0 else inv_spot_rate
+                stored_rate = fx_rate_input if fx_rate_input > 0 else 0.0
+                hkd_amount = round(amount / effective_rate, 2)
+                transaction.trans_fx_rate = stored_rate
+            elif (transaction.trans_fx_rate or 0) > 0:
+                hkd_amount = round(amount / transaction.trans_fx_rate, 2)
+            else:
+                spot_rate = get_fx_rate_to_hkd(transaction.trans_fx_currency_name, transaction.trans_datetime.date())
+                hkd_amount = round(amount / (1.0 / spot_rate), 2)
+            transaction.trans_fx_amount = sign * amount
+        elif fx_rate_provided and currency != 'HKD':
+            fx_rate_input = request.form.get('fx_rate', type=float) or 0.0
+            fx_auto = request.form.get('fx_auto', '0') == '1'
+            spot_rate = get_fx_rate_to_hkd(currency, transaction.trans_datetime.date())
+            inv_spot_rate = 1.0 / spot_rate
+            effective_rate = fx_rate_input if (fx_rate_input > 0 and not fx_auto) else inv_spot_rate
+            stored_rate = fx_rate_input if (fx_rate_input > 0 and not fx_auto) else 0.0
+            hkd_amount = round(amount / effective_rate, 2)
+            transaction.trans_fx_currency_name = currency
+            transaction.trans_fx_amount = sign * amount
+            transaction.trans_fx_rate = stored_rate
+            transaction.trans_currency_name = 'HKD'
+        elif not has_fx:
+            transaction.trans_currency_name = currency
+        else:
+            transaction.trans_fx_currency_name = None
+            transaction.trans_fx_amount = None
+            transaction.trans_fx_rate = None
+            transaction.trans_currency_name = currency
+
+        transaction.trans_amount = sign * hkd_amount
         transaction.trans_account_id = account_id
         transaction.trans_category_id = category_id
         transaction.trans_desc = description
@@ -492,4 +598,4 @@ def edit_transaction(trans_id):
     
     db.session.commit()
     flash('交易更新成功')
-    return redirect(url_for('transactions.dashboard', tab='list-tab'))
+    return _dashboard_redirect()

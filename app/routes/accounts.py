@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
 from sqlalchemy import nullsfirst, case, func
@@ -50,10 +50,42 @@ def get_account_eod_balance(account_id, as_of_date):
     if account and account.account_type.is_liability:
         raw_balance = -raw_balance
 
+    fx_balance = 0.0
+    fx_cost_numerator = 0.0
+    fx_cost_denominator = 0.0
+    deposit_units = 0.0
+    has_fx = False
+
+    if account and account.account_currency_name != 'HKD':
+        fx_transactions = Transaction.query.filter(
+            Transaction.trans_account_id == account_id,
+            Transaction.trans_datetime <= day_end,
+            Transaction.trans_fx_currency_name.isnot(None)
+        ).all()
+
+        for t in fx_transactions:
+            has_fx = True
+            fx_amt = t.trans_fx_amount or 0.0
+            fx_rate = t.trans_fx_rate or 0.0
+            fx_balance += fx_amt
+            if fx_rate > 0:
+                fx_cost_numerator += fx_amt / fx_rate
+                fx_cost_denominator += fx_amt
+                deposit_units += fx_amt
+
+    fx_cost_rate = (fx_cost_numerator / fx_cost_denominator) if fx_cost_denominator != 0 else None
+    acct_fx_currency = account.account_currency_name if (has_fx and account) else None
+    acct_fx_amount = fx_balance if has_fx else None
+    acct_deposit_unit = deposit_units if deposit_units != 0 else None
+
     balance_record = AccountBalance(
         as_of_dt=eod,
         account_id=account_id,
         account_balance=raw_balance,
+        deposit_unit=acct_deposit_unit,
+        account_fx_currency_name=acct_fx_currency,
+        account_fx_amount=acct_fx_amount,
+        account_fx_cost_rate=fx_cost_rate,
     )
     db.session.add(balance_record)
     db.session.commit()
@@ -96,6 +128,20 @@ def get_fx_rate_to_hkd(currency_code, target_date):
     return rate
 
 
+@accounts.route('/accounts/fx_rate')
+@login_required
+def fx_rate():
+    """AJAX 获取指定货币在指定日期的 HKD 汇率"""
+    currency = request.args.get('currency', 'HKD')
+    date_str = request.args.get('date', '')
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        target_date = datetime.now(timezone.utc).date()
+    rate = get_fx_rate_to_hkd(currency, target_date)
+    return jsonify({'rate': rate, 'currency': currency, 'date': target_date.strftime('%Y-%m-%d')})
+
+
 def compute_balance_sheet(accounts_list, start_date, end_date):
     """计算资产负债表，非HKD账户按期初/期末各自日期的汇率折算为HKD"""
     day_before_start = start_date - timedelta(days=1)
@@ -112,11 +158,23 @@ def compute_balance_sheet(accounts_list, start_date, end_date):
         balance_end = get_account_eod_balance(account.account_id, end_date)
 
         currency = account.account_currency_name
-        fx_start = get_fx_rate_to_hkd(currency, day_before_start)
-        fx_end = get_fx_rate_to_hkd(currency, end_date)
 
-        hkd_start = round(balance_start * fx_start, 2)
-        hkd_end = round(balance_end * fx_end, 2)
+        balance_start_record = AccountBalance.query.filter_by(
+            account_id=account.account_id, as_of_dt=day_before_start
+        ).first()
+        balance_end_record = AccountBalance.query.filter_by(
+            account_id=account.account_id, as_of_dt=end_date
+        ).first()
+
+        if balance_end_record and balance_end_record.account_fx_currency_name:
+            hkd_start = round(balance_start, 2)
+            hkd_end = round(balance_end, 2)
+        else:
+            fx_start = 1.0 / get_fx_rate_to_hkd(currency, day_before_start)
+            fx_end = 1.0 / get_fx_rate_to_hkd(currency, end_date)
+            hkd_start = round(balance_start / fx_start, 2)
+            hkd_end = round(balance_end / fx_end, 2)
+
         hkd_change = round(hkd_end - hkd_start, 2)
 
         item = {
@@ -132,6 +190,9 @@ def compute_balance_sheet(accounts_list, start_date, end_date):
             'is_closed': account.account_close_date is not None,
             '_raw_start': balance_start,
             '_raw_end': balance_end,
+            '_has_fx': bool(balance_end_record and balance_end_record.account_fx_currency_name),
+            '_account_fx_amount': balance_end_record.account_fx_amount if balance_end_record else None,
+            '_account_fx_cost_rate': balance_end_record.account_fx_cost_rate if balance_end_record else None,
         }
 
         if account.account_type.is_liability:
