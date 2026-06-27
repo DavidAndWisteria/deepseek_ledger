@@ -207,7 +207,7 @@ UNVERIFIED ──核对──→ VERIFIED
 | deposit_unit | FLOAT | NULLABLE | 存款单位（预留） |
 | account_fx_currency_name | CHAR(3) | NULLABLE | 外汇货币（预留） |
 | account_fx_amount | FLOAT | NULLABLE | 外汇金额（预留） |
-| account_fx_cost_rate | FLOAT | NULLABLE | 外汇成本汇率（预留） |
+| account_unit_cost_rate | FLOAT | NULLABLE | 单位成本汇率（预留） |
 
 **说明**：用于记录账户日终余额（EOD Balance），当前版本暂未在前端实现。
 

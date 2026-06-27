@@ -85,7 +85,7 @@ def get_account_eod_balance(account_id, as_of_date):
         deposit_unit=acct_deposit_unit,
         account_fx_currency_name=acct_fx_currency,
         account_fx_amount=acct_fx_amount,
-        account_fx_cost_rate=fx_cost_rate,
+        account_unit_cost_rate=fx_cost_rate,
     )
     db.session.add(balance_record)
     db.session.commit()
@@ -234,9 +234,12 @@ def compute_balance_sheet(accounts_list, start_date, end_date):
             '_raw_end': balance_end,
             '_has_fx_start': bool(balance_start_record and balance_start_record.account_fx_currency_name),
             '_account_fx_amount_start': balance_start_record.account_fx_amount if balance_start_record else None,
+            '_deposit_unit_start': balance_start_record.deposit_unit if balance_start_record else None,
+            '_account_fx_cost_rate_start': balance_start_record.account_unit_cost_rate if balance_start_record else None,
             '_has_fx_end': bool(balance_end_record and balance_end_record.account_fx_currency_name),
             '_account_fx_amount_end': balance_end_record.account_fx_amount if balance_end_record else None,
-            '_account_fx_cost_rate': balance_end_record.account_fx_cost_rate if balance_end_record else None,
+            '_deposit_unit_end': balance_end_record.deposit_unit if balance_end_record else None,
+            '_account_fx_cost_rate_end': balance_end_record.account_unit_cost_rate if balance_end_record else None,
             'balance_start_status': start_statuses.get(account.account_id),
             'balance_end_status': end_statuses.get(account.account_id),
         }

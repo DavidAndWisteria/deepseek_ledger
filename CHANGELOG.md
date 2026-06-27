@@ -4,6 +4,23 @@
 
 ---
 
+## [0.3.5] - 2026-06-27
+
+### 新增
+- ✨ 外币账户明细展开显示 AccountBalance 字段（点击明细行 ▶ 展开）
+  - 持仓单位 (`deposit_unit`)：期初 / 期末
+  - 单位成本汇率 (`account_unit_cost_rate`)：期初 / 期末
+
+### 变更
+- 🔧 `account_balance` 表列重命名：`account_fx_cost_rate` → `account_unit_cost_rate`（适用范围更广）
+- 🔧 数据库启动时自动迁移：检测旧列名执行 `ALTER TABLE RENAME COLUMN`
+
+### 修复
+- 🐛 修复 `toggleBsDetails` 因 `fx-detail` 行中断导致后续账户不显示
+- 🐛 修复 FX 子行缺少 `<td>` 标签导致内容溢出表格
+
+---
+
 ## [0.3.4] - 2026-06-27
 
 ### 新增

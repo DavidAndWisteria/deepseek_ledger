@@ -189,6 +189,10 @@
                         {% for item in items %}
                         <tr class="bs-detail" style="display: none; background: #fafafa;">
                             <td style="padding-left: 28px;">
+                                {% if item.currency != 'HKD' %}
+                                <span class="bs-toggle" style="font-size: 10px; color: #888; cursor: pointer; margin-right: 2px;"
+                                      onclick="event.stopPropagation(); toggleFxDetails(this.closest('tr'))">▶</span>
+                                {% endif %}
                                 <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
                                 <span style="font-size: 13px;">{{ item.name }}</span>
                                 <span style="color: #999;">({{ item.currency }})</span>
@@ -227,6 +231,14 @@
                                 </span>
                             </td>
                         </tr>
+                        {% if item.currency != 'HKD' %}
+                        <tr class="fx-detail" style="display: none; background: #fafafa;">
+                            <td style="padding-left: 32px; font-size: 11px; color: #666; padding-top: 0; padding-bottom: 8px;" colspan="6">
+                                持仓单位: {{ (item._deposit_unit_start or 0)|amt }} / {{ (item._deposit_unit_end or 0)|amt }}
+                                &nbsp;|&nbsp; 成本汇率: {{ (item._account_fx_cost_rate_start or 0)|amt(4) }} / {{ (item._account_fx_cost_rate_end or 0)|amt(4) }}
+                            </td>
+                        </tr>
+                        {% endif %}
                         {% endfor %}
                         {% endif %}
                         {% endfor %}
@@ -326,6 +338,10 @@
                         {% for item in items %}
                         <tr class="bs-detail" style="display: none; background: #fafafa;">
                             <td style="padding-left: 28px;">
+                                {% if item.currency != 'HKD' %}
+                                <span class="bs-toggle" style="font-size: 10px; color: #888; cursor: pointer; margin-right: 2px;"
+                                      onclick="event.stopPropagation(); toggleFxDetails(this.closest('tr'))">▶</span>
+                                {% endif %}
                                 <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
                                 <span style="font-size: 13px;">{{ item.name }}</span>
                                 <span style="color: #999;">({{ item.currency }})</span>
@@ -364,6 +380,14 @@
                                 </span>
                             </td>
                         </tr>
+                        {% if item.currency != 'HKD' %}
+                        <tr class="fx-detail" style="display: none; background: #fafafa;">
+                            <td style="padding-left: 32px; font-size: 11px; color: #666; padding-top: 0; padding-bottom: 8px;" colspan="6">
+                                持仓单位: {{ (item._deposit_unit_start or 0)|amt }} / {{ (item._deposit_unit_end or 0)|amt }}
+                                &nbsp;|&nbsp; 成本汇率: {{ (item._account_fx_cost_rate_start or 0)|amt(4) }} / {{ (item._account_fx_cost_rate_end or 0)|amt(4) }}
+                            </td>
+                        </tr>
+                        {% endif %}
                         {% endfor %}
                         {% endif %}
                         {% endfor %}
@@ -645,8 +669,21 @@
         let next = row.nextElementSibling;
         const expanded = toggle.textContent === '▼';
         toggle.textContent = expanded ? '▶' : '▼';
-        while (next && next.classList.contains('bs-detail')) {
-            next.style.display = expanded ? 'none' : 'table-row';
+        while (next && (next.classList.contains('bs-detail') || next.classList.contains('fx-detail'))) {
+            if (next.classList.contains('bs-detail')) {
+                next.style.display = expanded ? 'none' : 'table-row';
+            }
+            next = next.nextElementSibling;
+        }
+    }
+
+    function toggleFxDetails(row) {
+        const toggle = row.querySelector('.bs-toggle');
+        let next = row.nextElementSibling;
+        while (next && next.classList.contains('fx-detail')) {
+            const show = next.style.display === 'none';
+            next.style.display = show ? 'table-row' : 'none';
+            toggle.textContent = show ? '▼' : '▶';
             next = next.nextElementSibling;
         }
     }

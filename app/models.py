@@ -254,7 +254,7 @@ class AccountBalance(db.Model):
     deposit_unit = db.Column(db.Float, nullable=True)
     account_fx_currency_name = db.Column(db.String(3), nullable=True)
     account_fx_amount = db.Column(db.Float, nullable=True)
-    account_fx_cost_rate = db.Column(db.Float, nullable=True)
+    account_unit_cost_rate = db.Column(db.Float, nullable=True)
     
     def __repr__(self):
         return f'<Balance {self.account_id} as of {self.as_of_dt}: {self.account_balance}>'

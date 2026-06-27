@@ -90,6 +90,16 @@ def create_app(test_config=None):
             # 全新数据库，直接创建所有表
             db.create_all()
         else:
+            # 0.3.4: account_balance.account_fx_cost_rate → account_unit_cost_rate
+            if 'account_balance' in existing_tables:
+                existing_cols = {c['name'] for c in inspector.get_columns('account_balance')}
+                if 'account_fx_cost_rate' in existing_cols and 'account_unit_cost_rate' not in existing_cols:
+                    db.session.execute(db.text(
+                        'ALTER TABLE account_balance RENAME COLUMN account_fx_cost_rate TO account_unit_cost_rate'
+                    ))
+                    db.session.commit()
+                    inspector.info_cache.clear()  # 清除缓存以刷新列信息
+
             # 检查每个模型表的结构
             metadata = db.metadata
             for table_name, table in metadata.tables.items():
