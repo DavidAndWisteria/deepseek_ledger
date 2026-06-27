@@ -190,8 +190,10 @@ def compute_balance_sheet(accounts_list, start_date, end_date):
             'is_closed': account.account_close_date is not None,
             '_raw_start': balance_start,
             '_raw_end': balance_end,
-            '_has_fx': bool(balance_end_record and balance_end_record.account_fx_currency_name),
-            '_account_fx_amount': balance_end_record.account_fx_amount if balance_end_record else None,
+            '_has_fx_start': bool(balance_start_record and balance_start_record.account_fx_currency_name),
+            '_account_fx_amount_start': balance_start_record.account_fx_amount if balance_start_record else None,
+            '_has_fx_end': bool(balance_end_record and balance_end_record.account_fx_currency_name),
+            '_account_fx_amount_end': balance_end_record.account_fx_amount if balance_end_record else None,
             '_account_fx_cost_rate': balance_end_record.account_fx_cost_rate if balance_end_record else None,
         }
 

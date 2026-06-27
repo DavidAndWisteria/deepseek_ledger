@@ -54,33 +54,33 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
             <div class="card" style="text-align: center; padding: 16px; background: #f0faf3;">
                 <div style="font-size: 13px; color: #888; margin-bottom: 4px;">总资产</div>
-                <div style="font-size: 24px; font-weight: 700; color: #27ae60;">
-                    {{ "%.2f"|format(balance_sheet.total_asset_end) }}
+                <div class="text-income" style="font-size: 24px;">
+                    HKD {{ balance_sheet.total_asset_end|amt }}
                 </div>
                 <div style="font-size: 12px; color: #888; margin-top: 4px;">
-                    期初 {{ "%.2f"|format(balance_sheet.total_asset_start) }}
+                    期初 HKD {{ balance_sheet.total_asset_start|amt }}
                 </div>
             </div>
             <div class="card" style="text-align: center; padding: 16px; background: #fdf2f2;">
                 <div style="font-size: 13px; color: #888; margin-bottom: 4px;">总负债</div>
-                <div style="font-size: 24px; font-weight: 700; color: #e74c3c;">
-                    {{ "%.2f"|format(balance_sheet.total_liability_end) }}
+                <div class="text-expense" style="font-size: 24px;">
+                    HKD {{ balance_sheet.total_liability_end|amt }}
                 </div>
                 <div style="font-size: 12px; color: #888; margin-top: 4px;">
-                    期初 {{ "%.2f"|format(balance_sheet.total_liability_start) }}
+                    期初 HKD {{ balance_sheet.total_liability_start|amt }}
                 </div>
             </div>
             <div class="card" style="text-align: center; padding: 16px; background: #eef2fb;">
                 <div style="font-size: 13px; color: #888; margin-bottom: 4px;">净资产</div>
-                <div style="font-size: 24px; font-weight: 700; color: {{ '#27ae60' if balance_sheet.net_worth_end >= 0 else '#e74c3c' }};">
-                    {{ "%.2f"|format(balance_sheet.net_worth_end) }}
+                <div class="{{ 'text-income' if balance_sheet.net_worth_end >= 0 else 'text-expense' }}" style="font-size: 24px;">
+                    HKD {{ balance_sheet.net_worth_end|amt }}
                 </div>
                 <div style="font-size: 12px; color: #888; margin-top: 4px;">
-                    期初 {{ "%.2f"|format(balance_sheet.net_worth_start) }}
+                    期初 HKD {{ balance_sheet.net_worth_start|amt }}
                     &nbsp;|&nbsp;
                     变动
-                    <span style="color: {{ '#27ae60' if balance_sheet.net_worth_change >= 0 else '#e74c3c' }};">
-                        {{ '%+.2f'|format(balance_sheet.net_worth_change) }}
+                    <span class="{{ 'text-income' if balance_sheet.net_worth_change >= 0 else 'text-expense' }}">
+                        HKD {{ balance_sheet.net_worth_change|amt(signed=True) }}
                     </span>
                 </div>
             </div>
@@ -137,13 +137,13 @@
                                 <strong>{{ t }}</strong>
                                 <span style="color: #999; font-size: 12px; margin-left: 6px;">({{ items|length }})</span>
                             </td>
-                            <td style="text-align: right;">{{ "%.2f"|format(type_start) }}</td>
+                            <td style="text-align: right;"><span class="text-income">HKD {{ type_start|amt }}</span></td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_start, total_asset_start) }}</td>
-                            <td style="text-align: right;">{{ "%.2f"|format(type_end) }}</td>
+                            <td style="text-align: right;"><span class="text-income">HKD {{ type_end|amt }}</span></td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_end, total_asset_end) }}</td>
                             <td style="text-align: right;">
-                                <span style="color: {{ '#27ae60' if type_change >= 0 else '#e74c3c' }};">
-                                    {{ '%+.2f'|format(type_change) }}
+                                <span class="{{ 'text-income' if type_change >= 0 else 'text-expense' }}">
+                                    HKD {{ type_change|amt(signed=True) }}
                                 </span>
                             </td>
                         </tr>
@@ -153,17 +153,31 @@
                                 <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
                                 <span style="font-size: 13px;">{{ item.name }}</span>
                                 <span style="color: #999;">({{ item.currency }})</span>
-                                {% if item._has_fx and item._account_fx_amount %}
-                                <br><span style="font-size: 11px; color: #666;">外汇: {{ item.currency }} {{ "%.2f"|format(item._account_fx_amount) }}
+                                {% if item._has_fx_end and item._account_fx_amount_end %}
+                                <br><span class="text-income" style="font-size: 11px;">{{ item.currency }} {{ item._account_fx_amount_end|amt }}</span>
                                 {% endif %}
                             </td>
-                            <td style="text-align: right;">{{ "%.2f"|format(item.balance_start) }}</td>
+                            <td style="text-align: right;">
+                                {% if item._has_fx_start and item._account_fx_amount_start %}
+                                <span class="text-income">{{ item.currency }} {{ item._account_fx_amount_start|amt }}</span>
+                                <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_start|amt }}</span>
+                                {% else %}
+                                <span class="text-income">HKD {{ item.balance_start|amt }}</span>
+                                {% endif %}
+                            </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_start, total_asset_start) }}</td>
-                            <td style="text-align: right;">{{ "%.2f"|format(item.balance_end) }}</td>
+                            <td style="text-align: right;">
+                                {% if item._has_fx_end and item._account_fx_amount_end %}
+                                <span class="text-income">{{ item.currency }} {{ item._account_fx_amount_end|amt }}</span>
+                                <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_end|amt }}</span>
+                                {% else %}
+                                <span class="text-income">HKD {{ item.balance_end|amt }}</span>
+                                {% endif %}
+                            </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_end, total_asset_end) }}</td>
                             <td style="text-align: right;">
-                                <span style="color: {{ '#27ae60' if item.change >= 0 else '#e74c3c' }};">
-                                    {{ '%+.2f'|format(item.change) }}
+                                <span class="{{ 'text-income' if item.change >= 0 else 'text-expense' }}">
+                                    HKD {{ item.change|amt(signed=True) }}
                                 </span>
                             </td>
                         </tr>
@@ -174,12 +188,14 @@
                     <tfoot>
                         <tr style="font-weight: 700; background: #f0faf3;">
                             <td>资产合计</td>
-                            <td style="text-align: right;">{{ "%.2f"|format(total_asset_start) }}</td>
+                            <td style="text-align: right;"><span class="text-income">HKD {{ total_asset_start|amt }}</span></td>
                             <td style="text-align: right;">100%</td>
-                            <td style="text-align: right;">{{ "%.2f"|format(total_asset_end) }}</td>
+                            <td style="text-align: right;"><span class="text-income">HKD {{ total_asset_end|amt }}</span></td>
                             <td style="text-align: right;">100%</td>
                             <td style="text-align: right;">
-                                {{ '%+.2f'|format(total_asset_end - total_asset_start) }}
+                                <span class="{{ 'text-income' if (total_asset_end - total_asset_start) >= 0 else 'text-expense' }}">
+                                    HKD {{ (total_asset_end - total_asset_start)|amt(signed=True) }}
+                                </span>
                             </td>
                         </tr>
                     </tfoot>
@@ -219,13 +235,13 @@
                                 <strong>{{ t }}</strong>
                                 <span style="color: #999; font-size: 12px; margin-left: 6px;">({{ items|length }})</span>
                             </td>
-                            <td style="text-align: right;">{{ "%.2f"|format(type_start) }}</td>
+                            <td style="text-align: right;"><span class="text-expense">HKD {{ type_start|amt }}</span></td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_start, total_liability_start) }}</td>
-                            <td style="text-align: right;">{{ "%.2f"|format(type_end) }}</td>
+                            <td style="text-align: right;"><span class="text-expense">HKD {{ type_end|amt }}</span></td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_end, total_liability_end) }}</td>
                             <td style="text-align: right;">
-                                <span style="color: {{ '#e74c3c' if type_change > 0 else '#27ae60' }};">
-                                    {{ '%+.2f'|format(type_change) }}
+                                <span class="{{ 'text-expense' if type_change > 0 else 'text-income' }}">
+                                    HKD {{ type_change|amt(signed=True) }}
                                 </span>
                             </td>
                         </tr>
@@ -235,17 +251,31 @@
                                 <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
                                 <span style="font-size: 13px;">{{ item.name }}</span>
                                 <span style="color: #999;">({{ item.currency }})</span>
-                                {% if item._has_fx and item._account_fx_amount %}
-                                <br><span style="font-size: 11px; color: #666;">外汇: {{ item.currency }} {{ "%.2f"|format(item._account_fx_amount) }}</span>
+                                {% if item._has_fx_end and item._account_fx_amount_end %}
+                                <br><span class="text-expense" style="font-size: 11px;">{{ item.currency }} {{ item._account_fx_amount_end|amt }}</span>
                                 {% endif %}
                             </td>
-                            <td style="text-align: right;">{{ "%.2f"|format(item.balance_start) }}</td>
+                            <td style="text-align: right;">
+                                {% if item._has_fx_start and item._account_fx_amount_start %}
+                                <span class="text-expense">{{ item.currency }} {{ item._account_fx_amount_start|amt }}</span>
+                                <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_start|amt }}</span>
+                                {% else %}
+                                <span class="text-expense">HKD {{ item.balance_start|amt }}</span>
+                                {% endif %}
+                            </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_start, total_liability_start) }}</td>
-                            <td style="text-align: right;">{{ "%.2f"|format(item.balance_end) }}</td>
+                            <td style="text-align: right;">
+                                {% if item._has_fx_end and item._account_fx_amount_end %}
+                                <span class="text-expense">{{ item.currency }} {{ item._account_fx_amount_end|amt }}</span>
+                                <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_end|amt }}</span>
+                                {% else %}
+                                <span class="text-expense">HKD {{ item.balance_end|amt }}</span>
+                                {% endif %}
+                            </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_end, total_liability_end) }}</td>
                             <td style="text-align: right;">
-                                <span style="color: {{ '#e74c3c' if item.change > 0 else '#27ae60' }};">
-                                    {{ '%+.2f'|format(item.change) }}
+                                <span class="{{ 'text-expense' if item.change > 0 else 'text-income' }}">
+                                    HKD {{ item.change|amt(signed=True) }}
                                 </span>
                             </td>
                         </tr>
@@ -256,12 +286,14 @@
                     <tfoot>
                         <tr style="font-weight: 700; background: #fdf2f2;">
                             <td>负债合计</td>
-                            <td style="text-align: right;">{{ "%.2f"|format(total_liability_start) }}</td>
+                            <td style="text-align: right;"><span class="text-expense">HKD {{ total_liability_start|amt }}</span></td>
                             <td style="text-align: right;">100%</td>
-                            <td style="text-align: right;">{{ "%.2f"|format(total_liability_end) }}</td>
+                            <td style="text-align: right;"><span class="text-expense">HKD {{ total_liability_end|amt }}</span></td>
                             <td style="text-align: right;">100%</td>
                             <td style="text-align: right;">
-                                {{ '%+.2f'|format(total_liability_end - total_liability_start) }}
+                                <span class="{{ 'text-expense' if (total_liability_end - total_liability_start) > 0 else 'text-income' }}">
+                                    HKD {{ (total_liability_end - total_liability_start)|amt(signed=True) }}
+                                </span>
                             </td>
                         </tr>
                     </tfoot>

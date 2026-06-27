@@ -60,20 +60,20 @@
 <div class="summary-cards">
     <div class="summary-card">
         <div class="label">📥 总收入</div>
-        <div class="value text-income">${{ "%.2f"|format(total_income) }}</div>
+        <div class="value text-income">${{ total_income|amt }}</div>
     </div>
     <div class="summary-card">
         <div class="label">📤 总支出</div>
-        <div class="value text-expense">${{ "%.2f"|format(total_expense) }}</div>
+        <div class="value text-expense">${{ total_expense|amt }}</div>
     </div>
     <div class="summary-card">
         <div class="label">🔀 转账</div>
-        <div class="value text-transfer">${{ "%.2f"|format(total_transfer) }}</div>
+        <div class="value text-transfer">${{ total_transfer|amt }}</div>
     </div>
     <div class="summary-card">
         <div class="label">💰 净收入</div>
         <div class="value" style="color: {{ '#27ae60' if balance >= 0 else '#e74c3c' }};">
-            ${{ "%.2f"|format(balance) }}
+            ${{ balance|amt }}
         </div>
     </div>
     <div class="summary-card">
@@ -259,10 +259,10 @@
                         <td colspan="9" style="padding: 8px 12px; font-size: 13px; font-weight: 600;">
                             <span>{{ day['date'].strftime('%Y-%m-%d') }} ({{ day['transactions']|length }} 笔)</span>
                             {% if day['income'] > 0 %}
-                            <span class="text-income" style="margin-left: 16px;">📥 收入: ${{ "%.2f"|format(day['income']) }}</span>
+                            <span class="text-income" style="margin-left: 16px;">📥 收入: ${{ day['income']|amt }}</span>
                             {% endif %}
                             {% if day['expense'] > 0 %}
-                            <span class="text-expense" style="margin-left: 16px;">📤 支出: ${{ "%.2f"|format(day['expense']) }}</span>
+                            <span class="text-expense" style="margin-left: 16px;">📤 支出: ${{ day['expense']|amt }}</span>
                             {% endif %}
                         </td>
                     </tr>
@@ -288,13 +288,13 @@
                         <td>
                             {% if t.trans_fx_currency_name %}
                             <span class="{{ 'text-income' if t.trans_amount > 0 else 'text-expense' }}">
-                                {{ t.trans_fx_currency_name }} {{ "%.2f"|format(t.trans_fx_amount) }}
+                                {{ t.trans_fx_currency_name }} {{ t.trans_fx_amount|amt }}
                             </span>
-                            <br><span style="font-size: 11px; color: #999;">HKD {{ "%.2f"|format(t.trans_amount) }}
-                            {% if t.trans_fx_rate and t.trans_fx_rate > 0 %} @ {{ "%.4f"|format(t.trans_fx_rate) }}{% endif %}</span>
+                            <br><span style="font-size: 11px; color: #999;">HKD {{ t.trans_amount|amt }}
+                            {% if t.trans_fx_rate and t.trans_fx_rate > 0 %} @ {{ t.trans_fx_rate|amt(4) }}{% endif %}</span>
                             {% else %}
                             <span class="{{ 'text-income' if t.trans_amount > 0 else 'text-expense' }}">
-                                {{ t.trans_currency_name }} {{ "%.2f"|format(t.trans_amount) }}
+                                {{ t.trans_currency_name }} {{ t.trans_amount|amt }}
                             </span>
                             {% endif %}
                         </td>
@@ -320,7 +320,7 @@
                         </td>
                         <td style="white-space: nowrap;">
                             <button type="button" class="btn-action" style="background: #d4e6f1; color: #2980b9;"
-                                    onclick="openDetailModal('{{ t.trans_datetime.strftime('%Y-%m-%d %H:%M') }}', '{{ {'I': '收入', 'E': '支出', 'T': '转账'}.get(t.category_rel.category_type.value, '特殊') }}', '{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.owner.owner_name }} · {{ t.account_rel.account_name }}', '{{ t.category_rel.category_class }} › {{ t.category_rel.category_subclass or '-' }} › {{ t.category_rel.category_name }}', '{{ (t.trans_fx_currency_name + " " + "%.2f"|format(t.trans_fx_amount)) if t.trans_fx_currency_name else (t.trans_currency_name + " " + "%.2f"|format(t.trans_amount)) }}', `{{ ("HKD " + "%.2f"|format(t.trans_amount) + (" @ " + "%.4f"|format(t.trans_fx_rate) if t.trans_fx_rate and t.trans_fx_rate > 0 else "")) if t.trans_fx_currency_name else "" }}`, `{{ t.trans_desc or '' }}`, '{{ t.trans_status.value }}', {{ t.trans_id }}, {{ t.trans_account_id }}, {{ t.trans_category_id }}, {{ (t.trans_fx_amount|abs) if t.trans_fx_currency_name else (t.trans_amount|abs) }}, '{{ t.trans_fx_currency_name or t.trans_currency_name }}')"
+                                    onclick="openDetailModal('{{ t.trans_datetime.strftime('%Y-%m-%d %H:%M') }}', '{{ {'I': '收入', 'E': '支出', 'T': '转账'}.get(t.category_rel.category_type.value, '特殊') }}', '{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.owner.owner_name }} · {{ t.account_rel.account_name }}', '{{ t.category_rel.category_class }} › {{ t.category_rel.category_subclass or '-' }} › {{ t.category_rel.category_name }}', '{{ (t.trans_fx_currency_name + " " + (t.trans_fx_amount|amt)) if t.trans_fx_currency_name else (t.trans_currency_name + " " + (t.trans_amount|amt)) }}', `{{ ("HKD " + (t.trans_amount|amt) + (" @ " + (t.trans_fx_rate|amt(4)) if t.trans_fx_rate and t.trans_fx_rate > 0 else "")) if t.trans_fx_currency_name else "" }}`, `{{ t.trans_desc or '' }}`, '{{ t.trans_status.value }}', {{ t.trans_id }}, {{ t.trans_account_id }}, {{ t.trans_category_id }}, {{ (t.trans_fx_amount|abs) if t.trans_fx_currency_name else (t.trans_amount|abs) }}, '{{ t.trans_fx_currency_name or t.trans_currency_name }}')"
                                     title="查看详情">📋</button>
                             
                             {% if t.trans_status.value == 'UNVERIFIED' %}

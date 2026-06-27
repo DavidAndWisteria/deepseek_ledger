@@ -39,6 +39,15 @@ def create_app(test_config=None):
     def utility_processor():
         return {'today_date': lambda: dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d')}
 
+    # 自定义过滤器
+    @app.template_filter('amt')
+    def format_amount(value, decimals=2, signed=False):
+        if value is None:
+            return ''
+        if signed:
+            return '{:+,.{d}f}'.format(value, d=decimals)
+        return '{:,.{d}f}'.format(value, d=decimals)
+
     # 注册蓝图
     from app.routes.auth import auth as auth_blueprint
     app.register_blueprint(auth_blueprint)
