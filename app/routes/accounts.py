@@ -9,7 +9,7 @@ from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
 from sqlalchemy import nullsfirst, case, func
 from app import db
-from app.models import Account, AccountType, Owner, BluecoinsAccountMapping, Transaction, AccountBalance, CurrencyConversion
+from app.models import Account, AccountType, Owner, BluecoinsAccountMapping, Transaction, TransactionStatus, AccountBalance, CurrencyConversion
 
 accounts = Blueprint('accounts', __name__)
 
@@ -142,9 +142,51 @@ def fx_rate():
     return jsonify({'rate': rate, 'currency': currency, 'date': target_date.strftime('%Y-%m-%d')})
 
 
+def _get_accounts_balance_status(account_ids, as_of_date):
+    """批量获取多个账户截至指定日期的交易核对状态汇总。
+    
+    对每个账户，从最早交易到 as_of_date，汇总所有交易状态：
+    - 存在未核对 → UNVERIFIED
+    - 存在有疑问 → FLAGGED
+    - 全部已对账 → RECONCILED
+    - 其他 → VERIFIED
+    - 无交易 → None
+    """
+    if not account_ids:
+        return {}
+    results = db.session.query(
+        Transaction.trans_account_id,
+        Transaction.trans_status,
+        func.count(Transaction.trans_id)
+    ).filter(
+        Transaction.trans_account_id.in_(account_ids),
+        func.date(Transaction.trans_datetime) <= as_of_date
+    ).group_by(
+        Transaction.trans_account_id,
+        Transaction.trans_status
+    ).all()
+    status_by_account = {}
+    for acct_id, status, count in results:
+        status_by_account.setdefault(acct_id, {})[status] = count
+    final_status = {}
+    for acct_id in account_ids:
+        counts = status_by_account.get(acct_id, {})
+        if counts.get(TransactionStatus.FLAGGED, 0) > 0:
+            final_status[acct_id] = 'FLAGGED'
+        elif counts.get(TransactionStatus.UNVERIFIED, 0) > 0:
+            final_status[acct_id] = 'UNVERIFIED'
+        else:
+            final_status[acct_id] = 'VERIFIED'
+    return final_status
+
+
 def compute_balance_sheet(accounts_list, start_date, end_date):
     """计算资产负债表，非HKD账户按期初/期末各自日期的汇率折算为HKD"""
     day_before_start = start_date - timedelta(days=1)
+
+    account_ids = [a.account_id for a in accounts_list]
+    start_statuses = _get_accounts_balance_status(account_ids, day_before_start)
+    end_statuses = _get_accounts_balance_status(account_ids, end_date)
 
     assets = []
     liabilities = []
@@ -195,6 +237,8 @@ def compute_balance_sheet(accounts_list, start_date, end_date):
             '_has_fx_end': bool(balance_end_record and balance_end_record.account_fx_currency_name),
             '_account_fx_amount_end': balance_end_record.account_fx_amount if balance_end_record else None,
             '_account_fx_cost_rate': balance_end_record.account_fx_cost_rate if balance_end_record else None,
+            'balance_start_status': start_statuses.get(account.account_id),
+            'balance_end_status': end_statuses.get(account.account_id),
         }
 
         if account.account_type.is_liability:

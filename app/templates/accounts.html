@@ -103,6 +103,25 @@
             {% if total and total != 0 %}{{ "%.1f%%"|format(value / total * 100) }}{% else %}-{% endif %}
         {% endmacro %}
 
+        {% macro status_badge(status) %}
+            {% if status == 'FLAGGED' %}
+            <span class="badge" style="background: #f8d7da; color: #721c24; margin-left: 4px;">⚑</span>
+            {% elif status == 'UNVERIFIED' %}
+            <span class="badge" style="background: #fef3cd; color: #856404; margin-left: 4px;">⚠</span>
+            {% elif status == 'VERIFIED' %}
+            <span class="badge" style="background: #d4edda; color: #155724; margin-left: 4px;">✓</span>
+            {% endif %}
+        {% endmacro %}
+
+        {% macro worst_status(statuses) %}
+            {%- if statuses -%}
+                {%- if 'FLAGGED' in statuses -%}FLAGGED
+                {%- elif 'UNVERIFIED' in statuses -%}UNVERIFIED
+                {%- elif 'VERIFIED' in statuses -%}VERIFIED
+                {%- endif -%}
+            {%- endif -%}
+        {% endmacro %}
+
         {% set total_asset_start = balance_sheet.total_asset_start %}
         {% set total_asset_end = balance_sheet.total_asset_end %}
         {% set total_liability_start = balance_sheet.total_liability_start %}
@@ -113,7 +132,15 @@
             <h4 style="color: #27ae60; margin-bottom: 12px;">🟢 资产</h4>
             {% if balance_sheet.assets %}
             <div style="overflow-x: auto;">
-                <table>
+                <table style="table-layout: fixed; width: 100%;">
+                    <colgroup>
+                        <col style="width: 30%;">
+                        <col style="width: 20%;">
+                        <col style="width: 6%;">
+                        <col style="width: 20%;">
+                        <col style="width: 6%;">
+                        <col style="width: 18%;">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>账户类型</th>
@@ -131,15 +158,27 @@
                         {% set type_start = items|sum(attribute='balance_start') %}
                         {% set type_end = items|sum(attribute='balance_end') %}
                         {% set type_change = type_end - type_start %}
+                        {% set type_start_statuses = items|map(attribute='balance_start_status')|list %}
+                        {% set type_end_statuses = items|map(attribute='balance_end_status')|list %}
                         <tr class="bs-type-row" onclick="toggleBsDetails(this)" style="cursor: pointer; user-select: none;">
                             <td>
                                 <span class="bs-toggle">▶</span>
                                 <strong>{{ t }}</strong>
                                 <span style="color: #999; font-size: 12px; margin-left: 6px;">({{ items|length }})</span>
                             </td>
-                            <td style="text-align: right;"><span class="text-income">HKD {{ type_start|amt }}</span></td>
+                            <td style="text-align: right;">
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span class="text-income">HKD {{ type_start|amt }}</span>
+                                    {{ status_badge(worst_status(type_start_statuses)) }}
+                                </span>
+                            </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_start, total_asset_start) }}</td>
-                            <td style="text-align: right;"><span class="text-income">HKD {{ type_end|amt }}</span></td>
+                            <td style="text-align: right;">
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span class="text-income">HKD {{ type_end|amt }}</span>
+                                    {{ status_badge(worst_status(type_end_statuses)) }}
+                                </span>
+                            </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_end, total_asset_end) }}</td>
                             <td style="text-align: right;">
                                 <span class="{{ 'text-income' if type_change >= 0 else 'text-expense' }}">
@@ -153,26 +192,33 @@
                                 <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
                                 <span style="font-size: 13px;">{{ item.name }}</span>
                                 <span style="color: #999;">({{ item.currency }})</span>
-                                {% if item._has_fx_end and item._account_fx_amount_end %}
-                                <br><span class="text-income" style="font-size: 11px;">{{ item.currency }} {{ item._account_fx_amount_end|amt }}</span>
-                                {% endif %}
                             </td>
                             <td style="text-align: right;">
-                                {% if item._has_fx_start and item._account_fx_amount_start %}
-                                <span class="text-income">{{ item.currency }} {{ item._account_fx_amount_start|amt }}</span>
-                                <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_start|amt }}</span>
-                                {% else %}
-                                <span class="text-income">HKD {{ item.balance_start|amt }}</span>
-                                {% endif %}
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span>
+                                        {% if item.currency != 'HKD' %}
+                                        <span class="text-income">{{ item.currency }} {{ (item._account_fx_amount_start or 0)|amt }}</span>
+                                        <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_start|amt }}</span>
+                                        {% else %}
+                                        <span class="text-income">HKD {{ item.balance_start|amt }}</span>
+                                        {% endif %}
+                                    </span>
+                                    {{ status_badge(item.balance_start_status) }}
+                                </span>
                             </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_start, total_asset_start) }}</td>
                             <td style="text-align: right;">
-                                {% if item._has_fx_end and item._account_fx_amount_end %}
-                                <span class="text-income">{{ item.currency }} {{ item._account_fx_amount_end|amt }}</span>
-                                <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_end|amt }}</span>
-                                {% else %}
-                                <span class="text-income">HKD {{ item.balance_end|amt }}</span>
-                                {% endif %}
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span>
+                                        {% if item.currency != 'HKD' %}
+                                        <span class="text-income">{{ item.currency }} {{ (item._account_fx_amount_end or 0)|amt }}</span>
+                                        <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_end|amt }}</span>
+                                        {% else %}
+                                        <span class="text-income">HKD {{ item.balance_end|amt }}</span>
+                                        {% endif %}
+                                    </span>
+                                    {{ status_badge(item.balance_end_status) }}
+                                </span>
                             </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_end, total_asset_end) }}</td>
                             <td style="text-align: right;">
@@ -185,12 +231,24 @@
                         {% endif %}
                         {% endfor %}
                     </tbody>
+                    {% set all_asset_start_statuses = balance_sheet.assets|map(attribute='balance_start_status')|list %}
+                    {% set all_asset_end_statuses = balance_sheet.assets|map(attribute='balance_end_status')|list %}
                     <tfoot>
                         <tr style="font-weight: 700; background: #f0faf3;">
                             <td>资产合计</td>
-                            <td style="text-align: right;"><span class="text-income">HKD {{ total_asset_start|amt }}</span></td>
+                            <td style="text-align: right;">
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span class="text-income">HKD {{ total_asset_start|amt }}</span>
+                                    {{ status_badge(worst_status(all_asset_start_statuses)) }}
+                                </span>
+                            </td>
                             <td style="text-align: right;">100%</td>
-                            <td style="text-align: right;"><span class="text-income">HKD {{ total_asset_end|amt }}</span></td>
+                            <td style="text-align: right;">
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span class="text-income">HKD {{ total_asset_end|amt }}</span>
+                                    {{ status_badge(worst_status(all_asset_end_statuses)) }}
+                                </span>
+                            </td>
                             <td style="text-align: right;">100%</td>
                             <td style="text-align: right;">
                                 <span class="{{ 'text-income' if (total_asset_end - total_asset_start) >= 0 else 'text-expense' }}">
@@ -211,7 +269,15 @@
             <h4 style="color: #e74c3c; margin-bottom: 12px;">🔴 负债</h4>
             {% if balance_sheet.liabilities %}
             <div style="overflow-x: auto;">
-                <table>
+                <table style="table-layout: fixed; width: 100%;">
+                    <colgroup>
+                        <col style="width: 30%;">
+                        <col style="width: 20%;">
+                        <col style="width: 6%;">
+                        <col style="width: 20%;">
+                        <col style="width: 6%;">
+                        <col style="width: 18%;">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>账户类型</th>
@@ -229,15 +295,27 @@
                         {% set type_start = items|sum(attribute='balance_start') %}
                         {% set type_end = items|sum(attribute='balance_end') %}
                         {% set type_change = type_end - type_start %}
+                        {% set type_start_statuses = items|map(attribute='balance_start_status')|list %}
+                        {% set type_end_statuses = items|map(attribute='balance_end_status')|list %}
                         <tr class="bs-type-row" onclick="toggleBsDetails(this)" style="cursor: pointer; user-select: none;">
                             <td>
                                 <span class="bs-toggle">▶</span>
                                 <strong>{{ t }}</strong>
                                 <span style="color: #999; font-size: 12px; margin-left: 6px;">({{ items|length }})</span>
                             </td>
-                            <td style="text-align: right;"><span class="text-expense">HKD {{ type_start|amt }}</span></td>
+                            <td style="text-align: right;">
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span class="text-expense">HKD {{ type_start|amt }}</span>
+                                    {{ status_badge(worst_status(type_start_statuses)) }}
+                                </span>
+                            </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_start, total_liability_start) }}</td>
-                            <td style="text-align: right;"><span class="text-expense">HKD {{ type_end|amt }}</span></td>
+                            <td style="text-align: right;">
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span class="text-expense">HKD {{ type_end|amt }}</span>
+                                    {{ status_badge(worst_status(type_end_statuses)) }}
+                                </span>
+                            </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(type_end, total_liability_end) }}</td>
                             <td style="text-align: right;">
                                 <span class="{{ 'text-expense' if type_change > 0 else 'text-income' }}">
@@ -251,26 +329,33 @@
                                 <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
                                 <span style="font-size: 13px;">{{ item.name }}</span>
                                 <span style="color: #999;">({{ item.currency }})</span>
-                                {% if item._has_fx_end and item._account_fx_amount_end %}
-                                <br><span class="text-expense" style="font-size: 11px;">{{ item.currency }} {{ item._account_fx_amount_end|amt }}</span>
-                                {% endif %}
                             </td>
                             <td style="text-align: right;">
-                                {% if item._has_fx_start and item._account_fx_amount_start %}
-                                <span class="text-expense">{{ item.currency }} {{ item._account_fx_amount_start|amt }}</span>
-                                <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_start|amt }}</span>
-                                {% else %}
-                                <span class="text-expense">HKD {{ item.balance_start|amt }}</span>
-                                {% endif %}
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span>
+                                        {% if item.currency != 'HKD' %}
+                                        <span class="text-expense">{{ item.currency }} {{ (item._account_fx_amount_start or 0)|amt }}</span>
+                                        <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_start|amt }}</span>
+                                        {% else %}
+                                        <span class="text-expense">HKD {{ item.balance_start|amt }}</span>
+                                        {% endif %}
+                                    </span>
+                                    {{ status_badge(item.balance_start_status) }}
+                                </span>
                             </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_start, total_liability_start) }}</td>
                             <td style="text-align: right;">
-                                {% if item._has_fx_end and item._account_fx_amount_end %}
-                                <span class="text-expense">{{ item.currency }} {{ item._account_fx_amount_end|amt }}</span>
-                                <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_end|amt }}</span>
-                                {% else %}
-                                <span class="text-expense">HKD {{ item.balance_end|amt }}</span>
-                                {% endif %}
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span>
+                                        {% if item.currency != 'HKD' %}
+                                        <span class="text-expense">{{ item.currency }} {{ (item._account_fx_amount_end or 0)|amt }}</span>
+                                        <br><span style="font-size: 11px; color: #999;">HKD {{ item.balance_end|amt }}</span>
+                                        {% else %}
+                                        <span class="text-expense">HKD {{ item.balance_end|amt }}</span>
+                                        {% endif %}
+                                    </span>
+                                    {{ status_badge(item.balance_end_status) }}
+                                </span>
                             </td>
                             <td style="text-align: right; color: #999; font-size: 11px;">{{ bs_pct(item.balance_end, total_liability_end) }}</td>
                             <td style="text-align: right;">
@@ -283,12 +368,24 @@
                         {% endif %}
                         {% endfor %}
                     </tbody>
+                    {% set all_liability_start_statuses = balance_sheet.liabilities|map(attribute='balance_start_status')|list %}
+                    {% set all_liability_end_statuses = balance_sheet.liabilities|map(attribute='balance_end_status')|list %}
                     <tfoot>
                         <tr style="font-weight: 700; background: #fdf2f2;">
                             <td>负债合计</td>
-                            <td style="text-align: right;"><span class="text-expense">HKD {{ total_liability_start|amt }}</span></td>
+                            <td style="text-align: right;">
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span class="text-expense">HKD {{ total_liability_start|amt }}</span>
+                                    {{ status_badge(worst_status(all_liability_start_statuses)) }}
+                                </span>
+                            </td>
                             <td style="text-align: right;">100%</td>
-                            <td style="text-align: right;"><span class="text-expense">HKD {{ total_liability_end|amt }}</span></td>
+                            <td style="text-align: right;">
+                                <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <span class="text-expense">HKD {{ total_liability_end|amt }}</span>
+                                    {{ status_badge(worst_status(all_liability_end_statuses)) }}
+                                </span>
+                            </td>
                             <td style="text-align: right;">100%</td>
                             <td style="text-align: right;">
                                 <span class="{{ 'text-expense' if (total_liability_end - total_liability_start) > 0 else 'text-income' }}">
@@ -401,8 +498,8 @@
         <h3>📋 账户列表 ({{ accounts|length }})</h3>
         
         {% if accounts %}
-        <div style="overflow-x: auto;">
-            <table>
+             <div style="overflow-x: auto;">
+                <table>
                 <thead>
                     <tr>
                         <th>类型</th>
