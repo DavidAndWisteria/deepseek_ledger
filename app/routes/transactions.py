@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, timedelta
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from app import db
 from app.models import Transaction, Account, Category, Owner, TransactionStatus, AccountBalance
@@ -99,12 +99,19 @@ def dashboard():
     start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     end_of_month = (start_of_month + timedelta(days=32)).replace(day=1) - timedelta(seconds=1)
     
-    start_date = request.args.get('start_date', start_of_month.strftime('%Y-%m-%d'))
-    end_date = request.args.get('end_date', end_of_month.strftime('%Y-%m-%d'))
-    status_filter = request.args.get('status', '')
-    category_id = request.args.get('category_id', type=int)
-    account_id = request.args.get('account_id', type=int)
+    start_date = request.args.get('start_date', '') or session.get('dash_start_date', start_of_month.strftime('%Y-%m-%d'))
+    end_date = request.args.get('end_date', '') or session.get('dash_end_date', end_of_month.strftime('%Y-%m-%d'))
+    status_filter = request.args.get('status', '') or session.get('dash_status', '')
+    category_id = request.args.get('category_id', type=int) or session.get('dash_category_id')
+    account_id = request.args.get('account_id', type=int) or session.get('dash_account_id')
     active_tab = request.args.get('tab', 'add-tab')
+
+    # Persist filters to session for cross-page navigation
+    session['dash_start_date'] = start_date
+    session['dash_end_date'] = end_date
+    session['dash_status'] = status_filter
+    session['dash_category_id'] = category_id
+    session['dash_account_id'] = account_id
     
     try:
         start = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)

@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
 from sqlalchemy import nullsfirst, case, func
@@ -288,8 +288,8 @@ def list_accounts():
     active_accounts_list = [a for a in accounts_list if not a.account_close_date]
     today = datetime.now(timezone.utc).date()
     first_of_month = today.replace(day=1)
-    start_str = request.args.get('start_date', '')
-    end_str = request.args.get('end_date', '')
+    start_str = request.args.get('start_date', '') or session.get('accts_start_date', '')
+    end_str = request.args.get('end_date', '') or session.get('accts_end_date', '')
     if start_str or end_str:
         try:
             start_date = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else first_of_month
@@ -307,6 +307,10 @@ def list_accounts():
         start_str = start_date.strftime('%Y-%m-%d')
         end_str = end_date.strftime('%Y-%m-%d')
         balance_sheet = compute_balance_sheet(active_accounts_list, start_date, end_date)
+
+    # Persist dates to session for cross-page navigation
+    session['accts_start_date'] = start_date.strftime('%Y-%m-%d')
+    session['accts_end_date'] = end_date.strftime('%Y-%m-%d')
 
     active_tab = request.args.get('tab', 'finance')
 

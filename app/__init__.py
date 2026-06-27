@@ -1,6 +1,6 @@
 import os
 import datetime as dt
-from flask import Flask
+from flask import Flask, has_request_context
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
@@ -37,7 +37,15 @@ def create_app(test_config=None):
     # 模板全局变量
     @app.context_processor
     def utility_processor():
-        return {'today_date': lambda: dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d')}
+        def get_nav_params():
+            if has_request_context():
+                from flask import request as req
+                return {k: v for k in ('start_date', 'end_date') if (v := req.args.get(k, ''))}
+            return {}
+        return {
+            'today_date': lambda: dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d'),
+            'nav_params': get_nav_params(),
+        }
 
     # 自定义过滤器
     @app.template_filter('amt')
