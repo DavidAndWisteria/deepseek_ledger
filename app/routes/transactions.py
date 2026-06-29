@@ -74,6 +74,7 @@ def _get_filter_params():
             'status': get_param('status'),
             'category_id': get_param('category_id'),
             'account_id': get_param('account_id'),
+            'from_accounts': get_param('from_accounts'),
         }.items() if v
     }
 
@@ -103,7 +104,14 @@ def dashboard():
     end_date = request.args.get('end_date', '') or session.get('dash_end_date', end_of_month.strftime('%Y-%m-%d'))
     status_filter = request.args.get('status', '') or session.get('dash_status', '')
     category_id = request.args.get('category_id', type=int) or session.get('dash_category_id')
-    account_id = request.args.get('account_id', type=int) or session.get('dash_account_id')
+    _request_account_id = request.args.get('account_id', type=int)
+    if _request_account_id is not None:
+        account_id = _request_account_id
+    elif any(request.args.get(k) for k in ('start_date', 'end_date', 'status', 'category_id')):
+        account_id = None
+    else:
+        account_id = session.get('dash_account_id')
+    from_accounts = request.args.get('from_accounts', '')
     active_tab = request.args.get('tab', 'add-tab')
 
     # Persist filters to session for cross-page navigation
@@ -171,6 +179,7 @@ def dashboard():
         status_filter=status_filter,
         category_filter=category_id or '',
         account_filter=account_id or '',
+        from_accounts=from_accounts,
         active_tab=active_tab,
     )
 

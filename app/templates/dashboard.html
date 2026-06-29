@@ -1,12 +1,28 @@
 {% extends "base.html" %}
 
+{% macro filter_hidden() %}
+<input type="hidden" name="start_date" value="{{ start_date }}">
+<input type="hidden" name="end_date" value="{{ end_date }}">
+<input type="hidden" name="status" value="{{ status_filter }}">
+<input type="hidden" name="category_id" value="{{ category_filter }}">
+<input type="hidden" name="account_id" value="{{ account_filter }}">
+{% if from_accounts == '1' %}<input type="hidden" name="from_accounts" value="1">{% endif %}
+{% endmacro %}
+
 {% block content %}
 <h1 style="margin-bottom: 20px; color: #1a1a2e;">📊 财务仪表盘</h1>
+
+{% if from_accounts == '1' %}
+<div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+    <a href="{{ url_for('accounts.list_accounts', tab='finance', start_date=start_date, end_date=end_date) }}" class="btn" style="background: #16213e; color: white; text-decoration: none;">↩ 返回账户概览</a>
+</div>
+{% endif %}
 
 <!-- 筛选区域 -->
 <div class="card" style="margin-bottom: 20px;">
     <form method="GET" action="{{ url_for('transactions.dashboard') }}" id="filter-form">
         <input type="hidden" name="tab" value="list-tab">
+        {% if from_accounts == '1' %}<input type="hidden" name="from_accounts" value="1">{% endif %}
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; align-items: end;">
             <div class="form-group" style="margin-bottom: 0;">
                 <label>开始日期</label>
@@ -227,11 +243,7 @@
         {% if daily_sorted %}
         <form id="batch-form" method="POST" action="{{ url_for('transactions.batch_verify') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="start_date" value="{{ start_date }}">
-            <input type="hidden" name="end_date" value="{{ end_date }}">
-            <input type="hidden" name="status" value="{{ status_filter }}">
-            <input type="hidden" name="category_id" value="{{ category_filter }}">
-            <input type="hidden" name="account_id" value="{{ account_filter }}">
+            {{ filter_hidden() }}
             <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
                 <button type="submit" class="btn btn-secondary">✓ 批量核对选中项{% if unverified_count > 0 %}（共 {{ unverified_count }} 笔待核对）{% endif %}</button>
                 <button type="submit" class="btn" style="background: #fadbd8; color: #e74c3c;"
@@ -326,55 +338,35 @@
                             {% if t.trans_status.value == 'UNVERIFIED' %}
                             <form method="POST" action="{{ url_for('transactions.update_status', trans_id=t.trans_id, status='VERIFIED') }}" style="display: inline;">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="start_date" value="{{ start_date }}">
-                                <input type="hidden" name="end_date" value="{{ end_date }}">
-                                <input type="hidden" name="status" value="{{ status_filter }}">
-                                <input type="hidden" name="category_id" value="{{ category_filter }}">
-                                <input type="hidden" name="account_id" value="{{ account_filter }}">
+                                {{ filter_hidden() }}
                                 <button type="submit" class="btn-action" style="background: #d5f5e3; color: #27ae60;" title="核对">✓</button>
                             </form>
                             {% elif t.trans_status.value == 'VERIFIED' %}
                             <form method="POST" action="{{ url_for('transactions.update_status', trans_id=t.trans_id, status='UNVERIFIED') }}" style="display: inline;">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="start_date" value="{{ start_date }}">
-                                <input type="hidden" name="end_date" value="{{ end_date }}">
-                                <input type="hidden" name="status" value="{{ status_filter }}">
-                                <input type="hidden" name="category_id" value="{{ category_filter }}">
-                                <input type="hidden" name="account_id" value="{{ account_filter }}">
+                                {{ filter_hidden() }}
                                 <button type="submit" class="btn-action" style="background: #fef9e7; color: #b7950b;" title="取消核对">↩</button>
                             </form>
                             {% elif t.trans_status.value == 'FLAGGED' %}
-                            <form method="POST" action="{{ url_for('transactions.update_status', trans_id=t.trans_id, status='UNVERIFIED') }}" style="display: inline;">
+                             <form method="POST" action="{{ url_for('transactions.update_status', trans_id=t.trans_id, status='UNVERIFIED') }}" style="display: inline;">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="start_date" value="{{ start_date }}">
-                                <input type="hidden" name="end_date" value="{{ end_date }}">
-                                <input type="hidden" name="status" value="{{ status_filter }}">
-                                <input type="hidden" name="category_id" value="{{ category_filter }}">
-                                <input type="hidden" name="account_id" value="{{ account_filter }}">
+                                {{ filter_hidden() }}
                                 <button type="submit" class="btn-action" style="background: #eaecee; color: #5d6d7e;" title="取消标记">↩</button>
                             </form>
                             {% endif %}
                             
                             {% if t.trans_status.value != 'FLAGGED' %}
-                            <form method="POST" action="{{ url_for('transactions.update_status', trans_id=t.trans_id, status='FLAGGED') }}" style="display: inline;">
+                             <form method="POST" action="{{ url_for('transactions.update_status', trans_id=t.trans_id, status='FLAGGED') }}" style="display: inline;">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="start_date" value="{{ start_date }}">
-                                <input type="hidden" name="end_date" value="{{ end_date }}">
-                                <input type="hidden" name="status" value="{{ status_filter }}">
-                                <input type="hidden" name="category_id" value="{{ category_filter }}">
-                                <input type="hidden" name="account_id" value="{{ account_filter }}">
+                                {{ filter_hidden() }}
                                 <button type="submit" class="btn-action" style="background: #fadbd8; color: #e74c3c;" title="标记有疑问">⚑</button>
                             </form>
                             {% endif %}
                             
-                            <form method="POST" action="{{ url_for('transactions.delete_transaction', trans_id=t.trans_id) }}" style="display: inline;"
+                             <form method="POST" action="{{ url_for('transactions.delete_transaction', trans_id=t.trans_id) }}" style="display: inline;"
                                   onsubmit="return confirm('确定删除此交易？');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="start_date" value="{{ start_date }}">
-                                <input type="hidden" name="end_date" value="{{ end_date }}">
-                                <input type="hidden" name="status" value="{{ status_filter }}">
-                                <input type="hidden" name="category_id" value="{{ category_filter }}">
-                                <input type="hidden" name="account_id" value="{{ account_filter }}">
+                                {{ filter_hidden() }}
                                 <button type="submit" class="btn-action" style="background: #f5b7b1; color: #922b21;">🗑</button>
                             </form>
                         </td>

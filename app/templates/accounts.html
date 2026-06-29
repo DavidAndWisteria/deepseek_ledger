@@ -127,19 +127,20 @@
         {% set total_liability_start = balance_sheet.total_liability_start %}
         {% set total_liability_end = balance_sheet.total_liability_end %}
 
-        <!-- 资产 -->
+         <!-- 资产 -->
         <div style="margin-bottom: 32px;">
             <h4 style="color: #27ae60; margin-bottom: 12px;">🟢 资产</h4>
             {% if balance_sheet.assets %}
             <div style="overflow-x: auto;">
                 <table style="table-layout: fixed; width: 100%;">
                     <colgroup>
-                        <col style="width: 30%;">
-                        <col style="width: 20%;">
-                        <col style="width: 6%;">
-                        <col style="width: 20%;">
-                        <col style="width: 6%;">
-                        <col style="width: 18%;">
+                        <col style="width: 24%;">
+                        <col style="width: 17%;">
+                        <col style="width: 5%;">
+                        <col style="width: 17%;">
+                        <col style="width: 5%;">
+                        <col style="width: 15%;">
+                        <col style="width: 17%;">
                     </colgroup>
                     <thead>
                         <tr>
@@ -149,6 +150,7 @@
                             <th>期末余额</th>
                             <th></th>
                             <th>变动</th>
+                            <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -185,6 +187,7 @@
                                     HKD {{ type_change|amt(signed=True) }}
                                 </span>
                             </td>
+                            <td></td>
                         </tr>
                         {% for item in items %}
                         <tr class="bs-detail" style="display: none; background: #fafafa;">
@@ -230,10 +233,13 @@
                                     HKD {{ item.change|amt(signed=True) }}
                                 </span>
                             </td>
+                            <td style="text-align: center;">
+                                <a href="{{ url_for('transactions.dashboard', account_id=item.id, start_date=start_date, end_date=end_date, from_accounts=1, tab='list-tab') }}" class="btn" style="background: #d4e6f1; color: #2980b9; padding: 3px 10px; font-size: 11px; border-radius: 4px; text-decoration: none; white-space: nowrap;">详情</a>
+                            </td>
                         </tr>
                         {% if item.currency != 'HKD' %}
                         <tr class="fx-detail" style="display: none; background: #fafafa;">
-                            <td style="padding-left: 32px; font-size: 11px; color: #666; padding-top: 0; padding-bottom: 8px;" colspan="6">
+                            <td style="padding-left: 32px; font-size: 11px; color: #666; padding-top: 0; padding-bottom: 8px;" colspan="7">
                                 持仓单位: {{ (item._deposit_unit_start or 0)|amt }} / {{ (item._deposit_unit_end or 0)|amt }}
                                 &nbsp;|&nbsp; 成本汇率: {{ (item._account_fx_cost_rate_start or 0)|amt(4) }} / {{ (item._account_fx_cost_rate_end or 0)|amt(4) }}
                             </td>
@@ -267,6 +273,7 @@
                                     HKD {{ (total_asset_end - total_asset_start)|amt(signed=True) }}
                                 </span>
                             </td>
+                            <td></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -276,19 +283,20 @@
             {% endif %}
         </div>
 
-        <!-- 负债 -->
+         <!-- 负债 -->
         <div>
             <h4 style="color: #e74c3c; margin-bottom: 12px;">🔴 负债</h4>
             {% if balance_sheet.liabilities %}
             <div style="overflow-x: auto;">
                 <table style="table-layout: fixed; width: 100%;">
                     <colgroup>
-                        <col style="width: 30%;">
-                        <col style="width: 20%;">
-                        <col style="width: 6%;">
-                        <col style="width: 20%;">
-                        <col style="width: 6%;">
-                        <col style="width: 18%;">
+                        <col style="width: 24%;">
+                        <col style="width: 17%;">
+                        <col style="width: 5%;">
+                        <col style="width: 17%;">
+                        <col style="width: 5%;">
+                        <col style="width: 15%;">
+                        <col style="width: 17%;">
                     </colgroup>
                     <thead>
                         <tr>
@@ -298,6 +306,7 @@
                             <th>期末余额</th>
                             <th></th>
                             <th>变动</th>
+                            <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -334,6 +343,7 @@
                                     HKD {{ type_change|amt(signed=True) }}
                                 </span>
                             </td>
+                            <td></td>
                         </tr>
                         {% for item in items %}
                         <tr class="bs-detail" style="display: none; background: #fafafa;">
@@ -379,10 +389,13 @@
                                     HKD {{ item.change|amt(signed=True) }}
                                 </span>
                             </td>
+                            <td style="text-align: center;">
+                                <a href="{{ url_for('transactions.dashboard', account_id=item.id, start_date=start_date, end_date=end_date, from_accounts=1, tab='list-tab') }}" class="btn" style="background: #d4e6f1; color: #2980b9; padding: 3px 10px; font-size: 11px; border-radius: 4px; text-decoration: none; white-space: nowrap;">详情</a>
+                            </td>
                         </tr>
                         {% if item.currency != 'HKD' %}
                         <tr class="fx-detail" style="display: none; background: #fafafa;">
-                            <td style="padding-left: 32px; font-size: 11px; color: #666; padding-top: 0; padding-bottom: 8px;" colspan="6">
+                            <td style="padding-left: 32px; font-size: 11px; color: #666; padding-top: 0; padding-bottom: 8px;" colspan="7">
                                 持仓单位: {{ (item._deposit_unit_start or 0)|amt }} / {{ (item._deposit_unit_end or 0)|amt }}
                                 &nbsp;|&nbsp; 成本汇率: {{ (item._account_fx_cost_rate_start or 0)|amt(4) }} / {{ (item._account_fx_cost_rate_end or 0)|amt(4) }}
                             </td>
@@ -416,6 +429,7 @@
                                     HKD {{ (total_liability_end - total_liability_start)|amt(signed=True) }}
                                 </span>
                             </td>
+                            <td></td>
                         </tr>
                     </tfoot>
                 </table>
