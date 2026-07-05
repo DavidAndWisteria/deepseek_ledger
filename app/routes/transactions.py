@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from app import db
-from app.models import Transaction, Account, Category, Owner, TransactionStatus, AccountBalance
+from app.models import Transaction, Account, Category, Owner, TransactionStatus, AccountBalance, AccountType
 from app.routes.accounts import get_fx_rate_to_hkd
 
 transactions = Blueprint('transactions', __name__)
@@ -224,6 +224,17 @@ def add_transaction():
         flash('无效的分类或账户')
         return redirect(url_for('transactions.dashboard'))
 
+    unit = request.form.get('unit', type=float)
+    unit_price = request.form.get('unit_price', type=float)
+    show_units = (
+        account.account_type == AccountType.FUND or 
+        currency != 'HKD'
+    )
+
+    if not show_units:
+        unit = None
+        unit_price = None
+
     fx_rate_input = None
     fx_auto = False
     is_fx = (currency != 'HKD' and trans_type != 'transfer')
@@ -242,6 +253,25 @@ def add_transaction():
     else:
         hkd_amount = amount
 
+    if show_units:
+        has_amount = True
+        has_unit = unit is not None
+        has_unit_price = unit_price is not None
+        if has_unit and has_unit_price:
+            hkd_from_units = round(unit * unit_price, 2)
+            if has_amount and unit_price > 0:
+                if abs(hkd_amount - hkd_from_units) > 0.02:
+                    flash(f'单位×单价 ({unit} × {unit_price} ≈ {hkd_from_units}) 与交易金额 ({hkd_amount}) 不符')
+                    return redirect(url_for('transactions.dashboard'))
+            else:
+                hkd_amount = hkd_from_units
+                if not is_fx:
+                    amount = hkd_amount
+        elif has_unit and has_amount:
+            unit_price = round(hkd_amount / unit, 6)
+        elif has_unit_price and has_amount:
+            unit = round(hkd_amount / unit_price, 6)
+
     if trans_type == 'income':
         kwargs = {
             'trans_datetime': trans_datetime,
@@ -258,6 +288,9 @@ def add_transaction():
                 'trans_fx_amount': amount,
                 'trans_fx_rate': stored_fx_rate,
             })
+        if show_units and unit is not None and unit_price is not None:
+            kwargs['trans_unit'] = unit
+            kwargs['trans_unit_price'] = unit_price
         transaction = Transaction(**kwargs)
         db.session.add(transaction)
 
@@ -277,6 +310,9 @@ def add_transaction():
                 'trans_fx_amount': -amount,
                 'trans_fx_rate': stored_fx_rate,
             })
+        if show_units and unit is not None and unit_price is not None:
+            kwargs['trans_unit'] = -unit
+            kwargs['trans_unit_price'] = unit_price
         transaction = Transaction(**kwargs)
         db.session.add(transaction)
 
@@ -296,6 +332,9 @@ def add_transaction():
                 'trans_fx_amount': amount,
                 'trans_fx_rate': stored_fx_rate,
             })
+        if show_units and unit is not None and unit_price is not None:
+            kwargs['trans_unit'] = unit
+            kwargs['trans_unit_price'] = unit_price
         transaction = Transaction(**kwargs)
         db.session.add(transaction)
     
@@ -318,6 +357,9 @@ def add_transaction():
             trans_category_id=category_id,
             trans_owner_id=owner.owner_id
         )
+        if show_units and unit is not None and unit_price is not None:
+            trans_out.trans_unit = -unit
+            trans_out.trans_unit_price = unit_price
         db.session.add(trans_out)
         db.session.flush()
         
@@ -563,6 +605,44 @@ def edit_transaction(trans_id):
         transaction.trans_account_id = account_id
         transaction.trans_category_id = category_id
         transaction.trans_desc = description
+
+        account = db.session.get(Account, account_id)
+        if account:
+            unit_submitted = 'unit' in request.form or 'unit_price' in request.form
+            if unit_submitted:
+                unit = request.form.get('unit', type=float)
+                unit_price = request.form.get('unit_price', type=float)
+                edit_show_units = (
+                    account.account_type == AccountType.FUND or 
+                    currency != 'HKD'
+                )
+                if edit_show_units:
+                    has_amt = True
+                    has_unit = unit is not None
+                    has_up = unit_price is not None
+                    if has_unit and has_up:
+                        hkd_from_units = round(unit * unit_price, 2)
+                        if has_amt and unit_price > 0:
+                            if abs(abs(hkd_amount) - hkd_from_units) > 0.02:
+                                flash(f'单位×单价 ({unit} × {unit_price} ≈ {hkd_from_units}) 与交易金额 ({abs(hkd_amount)}) 不符')
+                                return _dashboard_redirect()
+                        else:
+                            hkd_amount = sign * hkd_from_units
+                            transaction.trans_amount = hkd_amount
+                    elif has_unit and has_amt:
+                        unit_price = round(abs(hkd_amount) / unit, 6)
+                    elif has_up and has_amt:
+                        unit = round(abs(hkd_amount) / unit_price, 6)
+                    if unit is not None and unit_price is not None:
+                        transaction.trans_unit = unit if sign > 0 else -unit
+                        transaction.trans_unit_price = unit_price
+                    else:
+                        transaction.trans_unit = None
+                        transaction.trans_unit_price = None
+                else:
+                    transaction.trans_unit = None
+                    transaction.trans_unit_price = None
+
         counter = None
     else:
         counter = db.session.get(Transaction, transaction.trans_counter_id)

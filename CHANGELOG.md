@@ -4,6 +4,24 @@
 
 ---
 
+## [0.3.7] - 2026-06-29
+
+### 新增
+- ✨ 交易表单新增单位（unit）/ 单位单价（unit price）可选字段
+  - 适用于基金账户（FUND）及所有外币账户（currency ≠ HKD）、非转账交易
+  - 自动计算：填写任意两项（金额、单位、单位单价），自动补全第三项
+  - 表单校验：三项均填写时，若金额 ≠ 单位 × 单位单价且单位单价 ≠ 0，阻止提交并标红提示
+  - 对于外币交易，单位单价即为汇率（1 单位外币 = X HKD）
+  - 若单位单价为 0，该笔交易不增加持仓单位，仅影响余额
+- ✨ `Transaction` 模型新增 `trans_unit` / `trans_unit_price` 字段
+- ✨ CSV 导入支持 `unit` / `单位`、`unit_price` / `单位单价` 列
+- ✨ `AccountBalance.deposit_unit` 计算优先使用 `trans_unit`（有则忽略 `trans_fx_amount`）
+
+### 变更
+- 🔧 `_ensure_eod_balance()` 持仓成本计算：有 `trans_unit` / `trans_unit_price` 时使用新字段
+
+---
+
 ## [0.3.6] - 2026-06-29
 
 ### 新增

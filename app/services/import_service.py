@@ -638,6 +638,28 @@ class ImportService:
                 'trans_currency_name': currency,
             })
 
+        # Read optional unit columns from CSV
+        unit_str = row.get('unit', '').strip() or row.get('单位', '').strip()
+        unit_price_str = row.get('unit_price', '').strip() or row.get('单位单价', '').strip()
+        if unit_str or unit_price_str:
+            try:
+                unit_val = float(unit_str) if unit_str else None
+                unit_price_val = float(unit_price_str) if unit_price_str else None
+                # Validate / auto-fill
+                if unit_val is not None and unit_price_val is not None:
+                    expected_hkd = round(abs(unit_val) * unit_price_val, 2)
+                    actual_hkd = abs(kwargs['trans_amount'])
+                    if unit_price_val > 0 and abs(actual_hkd - expected_hkd) > 0.02:
+                        raise ValueError(f'单位×单价 ({unit_val} × {unit_price_val} ≈ {expected_hkd}) 与交易金额 ({actual_hkd}) 不符')
+                if unit_val is not None and unit_price_val is not None:
+                    kwargs['trans_unit'] = unit_val if kwargs['trans_amount'] > 0 else -unit_val
+                    kwargs['trans_unit_price'] = unit_price_val
+            except ValueError as e:
+                self.results['transactions']['details'].append({
+                    'row': index + 1, 'status': 'failed', 'reason': str(e)
+                })
+                return 'failed'
+
         transaction = Transaction(**kwargs)
         db.session.add(transaction)
         return 'success'

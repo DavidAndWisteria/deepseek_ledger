@@ -107,7 +107,7 @@
 <!-- 添加交易表单 -->
 <div id="add-tab" class="tab-content {{ 'active' if active_tab == 'add-tab' else '' }}">
     <div class="card">
-        <form method="POST" action="{{ url_for('transactions.add_transaction') }}" id="transaction-form">
+        <form method="POST" action="{{ url_for('transactions.add_transaction') }}" id="transaction-form" onsubmit="return validateUnitForm()">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             
             <div class="form-row">
@@ -196,6 +196,17 @@
                     </label>
                     <button type="button" class="btn btn-sm" id="fx-fetch-btn" style="background: #d4e6f1; color: #2980b9; white-space: nowrap; height: 40px; display: none;"
                             onclick="fetchFxRate()" title="获取交易日汇率">🔄 获取</button>
+                </div>
+            </div>
+
+            <div class="form-row" id="unit-group" style="display: none;">
+                <div class="form-group" style="flex: 1;">
+                    <label for="unit">单位 <span style="font-weight: normal; color: #999;">(可选)</span></label>
+                    <input type="number" id="unit" name="unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="onUnitChange()">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label for="unit_price">单位单价 <span style="font-weight: normal; color: #999;">(可选)</span></label>
+                    <input type="number" id="unit_price" name="unit_price" step="0.000001" min="0" placeholder="每单位 HKD 价格" oninput="onUnitPriceChange()">
                 </div>
             </div>
             
@@ -407,11 +418,11 @@
                 <label>账户 *</label>
                 <select id="edit_account_id" name="account_id" required>
                     <option value="">选择账户</option>
-                    {% for account in accounts %}
-                    <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}">
-                        {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
-                    </option>
-                    {% endfor %}
+                        {% for account in accounts %}
+                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}" data-type="{{ account.account_type.value }}">
+                            {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
+                        </option>
+                        {% endfor %}
                 </select>
             </div>
             
@@ -515,8 +526,9 @@
             }
         }
         toggleFxRateGroup();
+        toggleUnitGroup();
     }
-    
+
     function onAccountChange() {
         const accountSelect = document.getElementById('account_id');
         const accountOption = accountSelect.options[accountSelect.selectedIndex];
@@ -526,10 +538,12 @@
         }
         syncTransferDefaults();
         toggleFxRateGroup();
+        toggleUnitGroup();
     }
     
     function onCurrencyChange() {
         toggleFxRateGroup();
+        toggleUnitGroup();
     }
     
     function toggleFxRateGroup() {
@@ -580,6 +594,7 @@
     
     function onAmountChange() {
         syncTransferDefaults();
+        autoFillUnitFields();
     }
     
     function syncTransferDefaults() {
@@ -608,6 +623,111 @@
             }
         }
         document.getElementById('category_id').value = '';
+    }
+
+    function toggleUnitGroup() {
+        const accountSelect = document.getElementById('account_id');
+        const accountOption = accountSelect.options[accountSelect.selectedIndex];
+        const accType = accountOption ? accountOption.getAttribute('data-type') : '';
+        const currency = document.getElementById('currency').value;
+        const unitGroup = document.getElementById('unit-group');
+
+        if (accType === 'FUND' || currency !== 'HKD') {
+            unitGroup.style.display = '';
+        } else {
+            unitGroup.style.display = 'none';
+            document.getElementById('unit').value = '';
+            document.getElementById('unit_price').value = '';
+        }
+    }
+
+    function _hkdAmountFromForm() {
+        var amt = parseFloat(document.getElementById('amount').value) || 0;
+        if (amt <= 0) return 0;
+        var currency = document.getElementById('currency').value;
+        if (currency === 'HKD') return amt;
+        var fxRateEl = document.getElementById('fx_rate');
+        var fxRate = parseFloat(fxRateEl.value) || 0;
+        if (fxRate > 0) {
+            return Math.round(amt / fxRate * 100) / 100;
+        }
+        return amt;
+    }
+
+    function _validateUnitFields() {
+        var unitEl = document.getElementById('unit');
+        var unitPriceEl = document.getElementById('unit_price');
+        var amt = parseFloat(document.getElementById('amount').value) || 0;
+        var unit = parseFloat(unitEl.value) || 0;
+        var unitPrice = parseFloat(unitPriceEl.value) || 0;
+        if (unit > 0 && unitPrice > 0 && amt > 0) {
+            var expectedHkd = Math.round(unit * unitPrice * 100) / 100;
+            var actualHkd = _hkdAmountFromForm();
+            if (Math.abs(actualHkd - expectedHkd) > 0.02) {
+                unitEl.style.borderColor = '#e74c3c';
+                unitPriceEl.style.borderColor = '#e74c3c';
+                return false;
+            }
+        }
+        unitEl.style.borderColor = '#ddd';
+        unitPriceEl.style.borderColor = '#ddd';
+        return true;
+    }
+
+    function autoFillUnitFields() {
+        var unitGroup = document.getElementById('unit-group');
+        if (unitGroup.style.display === 'none') return;
+        var unitEl = document.getElementById('unit');
+        var unitPriceEl = document.getElementById('unit_price');
+        var amountEl = document.getElementById('amount');
+        var currency = document.getElementById('currency').value;
+        var amt = parseFloat(amountEl.value) || 0;
+        var unit = parseFloat(unitEl.value) || 0;
+        var unitPrice = parseFloat(unitPriceEl.value) || 0;
+        var filled = (amt > 0 ? 1 : 0) + (unit > 0 ? 1 : 0) + (unitPrice > 0 ? 1 : 0);
+
+        if (filled < 2) {
+            _validateUnitFields();
+            return;
+        }
+
+        if (filled === 2) {
+            if (amt <= 0 && unit > 0 && unitPrice > 0) {
+                var hkdVal = unit * unitPrice;
+                if (currency === 'HKD') {
+                    amountEl.value = hkdVal.toFixed(2);
+                } else {
+                    amountEl.value = unit.toFixed(6);
+                }
+            } else if (unit <= 0 && amt > 0 && unitPrice > 0) {
+                var hkd = _hkdAmountFromForm();
+                unitEl.value = (hkd / unitPrice).toFixed(6);
+                if (currency !== 'HKD') {
+                    amountEl.value = (hkd / unitPrice).toFixed(6);
+                }
+            } else if (unitPrice <= 0 && amt > 0 && unit > 0) {
+                var hkd = _hkdAmountFromForm();
+                unitPriceEl.value = (hkd / unit).toFixed(6);
+            }
+        }
+
+        _validateUnitFields();
+    }
+
+    function onUnitChange() {
+        autoFillUnitFields();
+    }
+
+    function onUnitPriceChange() {
+        autoFillUnitFields();
+    }
+
+    function validateUnitForm() {
+        if (!_validateUnitFields()) {
+            alert('单位×单价与交易金额不符，请修正后再提交');
+            return false;
+        }
+        return true;
     }
     
     function switchTab(tabName) {

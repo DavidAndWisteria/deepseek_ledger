@@ -214,6 +214,10 @@ class Transaction(db.Model):
     trans_fx_amount = db.Column(db.Float, nullable=True)
     trans_fx_rate = db.Column(db.Float, nullable=True)
     trans_is_rhs_currency_ind = db.Column(db.Boolean, nullable=True)
+
+    # 单位 / 单价（基金、外币账户持仓追踪）
+    trans_unit = db.Column(db.Float, nullable=True)
+    trans_unit_price = db.Column(db.Float, nullable=True)
     
     # 存款关联 (MVP阶段预留)
     trans_deposit_id = db.Column(db.Integer, db.ForeignKey('time_deposit.deposit_id'), nullable=True)
