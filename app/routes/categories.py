@@ -1,6 +1,9 @@
+from typing import cast
+
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required
 from flask_wtf.csrf import generate_csrf
+from sqlalchemy import CursorResult, select, delete, update, func
 from app import db
 from app.models import Category, CategoryType, BluecoinsCategoryMapping, Transaction
 
@@ -11,7 +14,12 @@ categories = Blueprint('categories', __name__)
 @login_required
 def list_categories():
     """分类列表"""
-    cats = Category.query.order_by(Category.category_type, Category.category_class, Category.category_subclass).all()
+    stmt = select(Category).order_by(
+        Category.category_type,
+        Category.category_class,
+        Category.category_subclass
+    )
+    cats = db.session.execute(stmt).scalars().all()
     return render_template('categories.html', categories=cats, category_types=CategoryType)
 
 
@@ -73,7 +81,12 @@ def check_delete_category(category_id):
     if not category:
         return '<p style="color: #e74c3c; text-align: center;">分类不存在</p>'
     
-    transaction_count = Transaction.query.filter_by(trans_category_id=category_id).count()
+    # 使用 select 计数替代 Transaction.query.filter_by(...).count()
+    count_stmt = select(func.count()).select_from(Transaction).where(
+        Transaction.trans_category_id == category_id
+    )
+    transaction_count = db.session.scalar(count_stmt)
+    
     csrf_token = generate_csrf()
     
     if transaction_count == 0:
@@ -89,7 +102,13 @@ def check_delete_category(category_id):
             </form>
         </div>'''
     
-    cats = Category.query.order_by(Category.category_type, Category.category_class, Category.category_subclass).all()
+    # 获取所有分类，排除自身
+    stmt = select(Category).order_by(
+        Category.category_type,
+        Category.category_class,
+        Category.category_subclass
+    )
+    cats = db.session.execute(stmt).scalars().all()
     target_categories = [c for c in cats if c.category_id != category_id]
     
     html = f'''<div id="delete-content-data">
@@ -148,14 +167,22 @@ def delete_category(category_id):
         flash('分类不存在')
         return redirect(url_for('categories.list_categories'))
     
-    # 如果有直接 POST 请求（旧版兼容），检查关联
-    transaction_count = Transaction.query.filter_by(trans_category_id=category_id).count()
+    # 检查关联交易数量
+    count_stmt = select(func.count()).select_from(Transaction).where(
+        Transaction.trans_category_id == category_id
+    )
+    transaction_count = db.session.scalar(count_stmt) or 0
     
     if transaction_count > 0:
         flash(f'分类 "{category.category_name}" 有 {transaction_count} 笔关联交易，请通过列表中的删除按钮处理')
         return redirect(url_for('categories.list_categories'))
     
-    BluecoinsCategoryMapping.query.filter_by(category_id=category_id).delete()
+    # 删除 Bluecoins 映射
+    del_mapping_stmt = delete(BluecoinsCategoryMapping).where(
+        BluecoinsCategoryMapping.category_id == category_id
+    )
+    db.session.execute(del_mapping_stmt)
+    
     db.session.delete(category)
     db.session.commit()
     flash('分类已删除')
@@ -180,12 +207,21 @@ def confirm_delete_category(category_id):
             flash('目标分类无效')
             return redirect(url_for('categories.list_categories'))
         
-        updated = Transaction.query.filter_by(trans_category_id=category_id).update(
-            {'trans_category_id': target_category_id}, synchronize_session='fetch'
+        # 迁移交易：更新 trans_category_id
+        upd_stmt = (
+            update(Transaction)
+            .where(Transaction.trans_category_id == category_id)
+            .values(trans_category_id=target_category_id)
         )
+        result = cast(CursorResult, db.session.execute(upd_stmt))
+        updated = result.rowcount
         flash(f'已将 {updated} 笔交易迁移到 "{target.category_name}"')
     else:
-        transactions = Transaction.query.filter_by(trans_category_id=category_id).all()
+        # 删除所有关联交易，包括转账配对
+        trans_stmt = select(Transaction).where(
+            Transaction.trans_category_id == category_id
+        )
+        transactions = db.session.execute(trans_stmt).scalars().all()
         deleted = len(transactions)
         for t in transactions:
             if t.trans_counter_id:
@@ -195,7 +231,12 @@ def confirm_delete_category(category_id):
             db.session.delete(t)
         flash(f'已删除 {deleted} 笔关联交易')
     
-    BluecoinsCategoryMapping.query.filter_by(category_id=category_id).delete()
+    # 删除 Bluecoins 映射
+    del_mapping_stmt = delete(BluecoinsCategoryMapping).where(
+        BluecoinsCategoryMapping.category_id == category_id
+    )
+    db.session.execute(del_mapping_stmt)
+    
     db.session.delete(category)
     db.session.commit()
     flash('分类已删除')

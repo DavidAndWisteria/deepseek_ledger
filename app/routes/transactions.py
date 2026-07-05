@@ -1,6 +1,8 @@
 from datetime import datetime, timezone, timedelta
+from typing import Any
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
+from sqlalchemy import select, delete, false
 from app import db
 from app.models import Transaction, Account, Category, Owner, TransactionStatus, AccountBalance, AccountType
 from app.routes.accounts import get_fx_rate_to_hkd
@@ -12,10 +14,14 @@ def invalidate_account_balances(account_id, from_datetime):
     """删除指定账户从指定日期起的所有缓存日终余额记录"""
     if not account_id:
         return
-    AccountBalance.query.filter(
-        AccountBalance.account_id == account_id,
-        AccountBalance.as_of_dt >= from_datetime.date()
-    ).delete(synchronize_session=False)
+    stmt = (
+        delete(AccountBalance)
+        .where(
+            AccountBalance.account_id == account_id,
+            AccountBalance.as_of_dt >= from_datetime.date()
+        )
+    )
+    db.session.execute(stmt)
 
 
 def _ensure_utc(dt):
@@ -32,34 +38,41 @@ def get_user_owner():
 
 def get_visible_transactions_query(start_date=None, end_date=None, status_filter=None, 
                                    category_id=None, account_id=None):
-    """获取当前用户可见的交易查询，支持按状态、分类、账户筛选"""
+    """
+    返回一个针对当前用户可见交易的 SELECT 语句。
+    调用方需通过 db.session.execute(stmt).scalars().all() 获取结果。
+    """
     owner = get_user_owner()
     if not owner:
-        return Transaction.query.filter(False)
-    
-    query = Transaction.query
-    
+        # 无条件返回空结果
+        return select(Transaction).where(false())
+
+    stmt = select(Transaction)
+
     if current_user.can_view_family_data():
-        family_owner_ids = [o.owner_id for o in Owner.query.filter_by(family_id=owner.family_id).all()]
-        query = query.filter(Transaction.trans_owner_id.in_(family_owner_ids))
+        # 获取家庭成员的所有 owner_id
+        family_owner_ids = db.session.execute(
+            select(Owner.owner_id).where(Owner.family_id == owner.family_id)
+        ).scalars().all()
+        stmt = stmt.where(Transaction.trans_owner_id.in_(family_owner_ids))
     else:
-        query = query.filter_by(trans_owner_id=owner.owner_id)
-    
+        stmt = stmt.where(Transaction.trans_owner_id == owner.owner_id)
+
     if start_date:
-        query = query.filter(Transaction.trans_datetime >= start_date)
+        stmt = stmt.where(Transaction.trans_datetime >= start_date)
     if end_date:
-        query = query.filter(Transaction.trans_datetime <= end_date)
-    
+        stmt = stmt.where(Transaction.trans_datetime <= end_date)
+
     if status_filter:
-        query = query.filter_by(trans_status=TransactionStatus(status_filter))
-    
+        stmt = stmt.where(Transaction.trans_status == TransactionStatus(status_filter))
+
     if category_id:
-        query = query.filter_by(trans_category_id=category_id)
-    
+        stmt = stmt.where(Transaction.trans_category_id == category_id)
+
     if account_id:
-        query = query.filter_by(trans_account_id=account_id)
-    
-    return query.order_by(Transaction.trans_datetime.desc())
+        stmt = stmt.where(Transaction.trans_account_id == account_id)
+
+    return stmt.order_by(Transaction.trans_datetime.desc())
 
 
 def _get_filter_params():
@@ -81,7 +94,7 @@ def _get_filter_params():
 
 def _dashboard_redirect(**extra):
     """重定向到仪表盘，保留筛选参数，默认显示列表标签页"""
-    params = {'tab': 'list-tab'}
+    params: dict[str, Any] = {'tab': 'list-tab'}
     params.update(_get_filter_params())
     params.update(extra)
     return redirect(url_for('transactions.dashboard', **params))
@@ -128,9 +141,11 @@ def dashboard():
         start = start_of_month
         end = end_of_month
     
-    transactions_list = get_visible_transactions_query(
+    # 执行查询
+    stmt = get_visible_transactions_query(
         start, end, status_filter, category_id, account_id
-    ).all()
+    )
+    transactions_list = db.session.execute(stmt).scalars().all()
     
     total_income = sum(t.trans_amount for t in transactions_list if t.is_income())
     total_expense = sum(abs(t.trans_amount) for t in transactions_list if t.is_expense())
@@ -156,13 +171,21 @@ def dashboard():
     
     daily_sorted = sorted(daily_groups.values(), key=lambda x: x['date'], reverse=True)
     
-    accounts = Account.query.filter_by(account_owner_id=owner.owner_id)\
+    # 账户查询
+    account_stmt = (
+        select(Account)
+        .where(Account.account_owner_id == owner.owner_id)
         .order_by(Account.account_type, Account.account_custodian, 
-                  Account.account_owner_id, Account.account_name).all()
+                  Account.account_owner_id, Account.account_name)
+    )
+    accounts = db.session.execute(account_stmt).scalars().all()
     
-    categories = Category.query.order_by(
-        Category.category_class, Category.category_subclass, Category.category_name
-    ).all()
+    # 分类查询
+    category_stmt = (
+        select(Category)
+        .order_by(Category.category_class, Category.category_subclass, Category.category_name)
+    )
+    categories = db.session.execute(category_stmt).scalars().all()
     
     return render_template(
         'dashboard.html',
@@ -238,6 +261,8 @@ def add_transaction():
     fx_rate_input = None
     fx_auto = False
     is_fx = (currency != 'HKD' and trans_type != 'transfer')
+    stored_fx_rate = 0.0  # will init in certain branch
+    to_account_id = 0  # will init in certain branch
 
     if is_fx:
         fx_rate_input = request.form.get('fx_rate', type=float)
@@ -567,6 +592,7 @@ def edit_transaction(trans_id):
         hkd_amount = amount
 
         if has_fx:
+            trans_fx_rate = transaction.trans_fx_rate or 0.0
             if fx_rate_provided:
                 fx_rate_input = request.form.get('fx_rate', type=float) or 0.0
                 spot_rate = get_fx_rate_to_hkd(transaction.trans_fx_currency_name, transaction.trans_datetime.date())
@@ -575,8 +601,8 @@ def edit_transaction(trans_id):
                 stored_rate = fx_rate_input if fx_rate_input > 0 else 0.0
                 hkd_amount = round(amount / effective_rate, 2)
                 transaction.trans_fx_rate = stored_rate
-            elif (transaction.trans_fx_rate or 0) > 0:
-                hkd_amount = round(amount / transaction.trans_fx_rate, 2)
+            elif trans_fx_rate > 0:
+                hkd_amount = round(amount / trans_fx_rate, 2)
             else:
                 spot_rate = get_fx_rate_to_hkd(transaction.trans_fx_currency_name, transaction.trans_datetime.date())
                 hkd_amount = round(amount / (1.0 / spot_rate), 2)

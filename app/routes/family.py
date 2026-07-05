@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
+from sqlalchemy import select, func
 from app import db
 from app.models import Family, User, Owner, UserRole
 
@@ -32,13 +33,15 @@ def manage_family():
         return redirect(url_for('transactions.dashboard'))
     
     # 获取家庭所有成员（排除家庭共享 Owner，即 user_id 为 None 的）
-    members = Owner.query.filter(
-        Owner.family_id == family_obj.family_id,
-        Owner.user_id.isnot(None)
-    ).all()
+    members_stmt = (
+        select(Owner)
+        .where(Owner.family_id == family_obj.family_id, Owner.user_id.isnot(None))
+    )
+    members = db.session.execute(members_stmt).scalars().all()
     
     # 获取家庭所有用户
-    users = User.query.filter_by(family_id=family_obj.family_id).all()
+    users_stmt = select(User).where(User.family_id == family_obj.family_id)
+    users = db.session.execute(users_stmt).scalars().all()
     
     return render_template(
         'family.html',
@@ -74,7 +77,11 @@ def add_member():
         errors.append('用户名至少3个字符')
     if not password or len(password) < 8:
         errors.append('密码至少8个字符')
-    if User.query.filter_by(username=username).first():
+    
+    # 检查用户名唯一性
+    check_stmt = select(User).where(User.username == username)
+    existing_user = db.session.execute(check_stmt).scalars().first()
+    if existing_user:
         errors.append('用户名已存在')
     
     if errors:
@@ -119,6 +126,9 @@ def edit_member(owner_id):
         return redirect(url_for('family.manage_family'))
     
     current_owner = get_user_owner()
+    if not current_owner:
+        flash('请先设置个人信息')
+        return redirect(url_for('transactions.dashboard'))
     
     # 验证是否同一家庭
     if target_owner.family_id != current_owner.family_id:
@@ -158,6 +168,9 @@ def delete_member(owner_id):
         return redirect(url_for('family.manage_family'))
     
     current_owner = get_user_owner()
+    if not current_owner:
+        flash('请先设置个人信息')
+        return redirect(url_for('transactions.dashboard'))
     
     # 验证是否同一家庭
     if target_owner.family_id != current_owner.family_id:
@@ -171,11 +184,16 @@ def delete_member(owner_id):
     
     # 检查是否还有其他成人
     if target_owner.user and target_owner.user.is_adult():
-        adult_count = User.query.filter_by(
-            family_id=current_owner.family_id,
-            role=UserRole.ADULT
-        ).count()
-        if adult_count <= 1:
+        adult_count_stmt = (
+            select(func.count())
+            .select_from(User)
+            .where(
+                User.family_id == current_owner.family_id,
+                User.role == UserRole.ADULT
+            )
+        )
+        adult_count = db.session.scalar(adult_count_stmt)
+        if adult_count is None or adult_count <= 1:
             flash('家庭至少需要一位成人成员')
             return redirect(url_for('family.manage_family'))
     
@@ -205,6 +223,9 @@ def reset_member_password(owner_id):
         return redirect(url_for('family.manage_family'))
     
     current_owner = get_user_owner()
+    if not current_owner:
+        flash('请先设置个人信息')
+        return redirect(url_for('transactions.dashboard'))
     
     if target_owner.family_id != current_owner.family_id:
         flash('无权操作此成员')

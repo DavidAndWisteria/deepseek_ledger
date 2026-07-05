@@ -31,7 +31,7 @@ def create_app(test_config=None):
     login_manager.init_app(app)
     csrf.init_app(app)
     
-    login_manager.login_view = 'auth.login'
+    login_manager.login_view = 'auth.login' # type: ignore
     login_manager.login_message = '请先登录以访问此页面。'
 
     # 模板全局变量
@@ -80,15 +80,16 @@ def create_app(test_config=None):
 
     # 创建数据库表
     with app.app_context():
-        from app import models
-        from sqlalchemy import inspect, MetaData
+        from sqlalchemy import inspect
+        from app.models import Base
         
         inspector = inspect(db.engine)
         existing_tables = inspector.get_table_names()
+        metadata = Base.metadata
         
         if not existing_tables:
             # 全新数据库，直接创建所有表
-            db.create_all()
+            metadata.create_all(db.engine)
         else:
             # 0.3.4: account_balance.account_fx_cost_rate → account_unit_cost_rate
             if 'account_balance' in existing_tables:
@@ -101,7 +102,6 @@ def create_app(test_config=None):
                     inspector.info_cache.clear()  # 清除缓存以刷新列信息
 
             # 检查每个模型表的结构
-            metadata = db.metadata
             for table_name, table in metadata.tables.items():
                 if table_name not in existing_tables:
                     # 表不存在，直接创建

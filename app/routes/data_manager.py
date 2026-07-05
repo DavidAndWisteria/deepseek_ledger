@@ -1,9 +1,10 @@
 import os
 import shutil
 from datetime import datetime, timezone
+from typing import cast
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required
-from sqlalchemy import text
+from sqlalchemy import CursorResult, text
 from app import db
 
 data_manager = Blueprint('data_manager', __name__)
@@ -21,21 +22,6 @@ BACKUP_DIR = os.path.join(PROJECT_DIR, 'instance', 'backups')
 @login_required
 def data_page():
     """数据管理页面"""
-    # 获取备份列表
-    backups = []
-    if os.path.exists(BACKUP_DIR):
-        files = [f for f in os.listdir(BACKUP_DIR) if f.endswith('.db')]
-        files.sort(reverse=True)
-        for f in files:
-            path = os.path.join(BACKUP_DIR, f)
-            size = os.path.getsize(path)
-            mtime = datetime.fromtimestamp(os.path.getmtime(path)).strftime('%Y-%m-%d %H:%M:%S')
-            backups.append({
-                'filename': f,
-                'size': f'{size / 1024:.1f} KB' if size < 1024 * 1024 else f'{size / 1024 / 1024:.1f} MB',
-                'mtime': mtime
-            })
-    
     return render_template('data_manager.html', backups=_get_backups(), active_tab='backup')
 
 
@@ -106,7 +92,6 @@ def delete_backup():
 # ===============================================================
 
 @data_manager.route('/data/query', methods=['POST'])
-@data_manager.route('/data/query', methods=['POST'])
 @login_required
 def execute_query():
     sql = request.form.get('sql', '').strip()
@@ -115,7 +100,7 @@ def execute_query():
         return redirect(url_for('data_manager.data_page'))
     
     try:
-        result = db.session.execute(text(sql))
+        result = cast(CursorResult, db.session.execute(text(sql)))
         
         if result.returns_rows:
             rows = result.fetchall()

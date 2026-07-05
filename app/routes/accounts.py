@@ -1,15 +1,17 @@
 import json
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
+from typing import cast
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
-from sqlalchemy import nullsfirst, case, func
+from sqlalchemy import CursorResult, nullsfirst, case, func, select, delete, update
 from app import db
-from app.models import Account, AccountType, Owner, BluecoinsAccountMapping, Transaction, TransactionStatus, AccountBalance, CurrencyConversion
+from app.models import (Account, AccountType, Owner, BluecoinsAccountMapping,
+                        Transaction, TransactionStatus, AccountBalance, CurrencyConversion)
 
 accounts = Blueprint('accounts', __name__)
 
@@ -26,25 +28,29 @@ def get_family_members():
     owner = get_user_owner()
     if not owner:
         return []
-    return Owner.query.filter_by(family_id=owner.family_id).all()
+    stmt = select(Owner).where(Owner.family_id == owner.family_id)
+    return db.session.execute(stmt).scalars().all()
 
 
 def get_account_eod_balance(account_id, as_of_date):
     """获取指定账户在指定日期的日终余额，若无缓存则从交易记录计算并存储"""
     eod = as_of_date
-    record = AccountBalance.query.filter_by(
-        account_id=account_id, as_of_dt=eod
-    ).first()
+    # 查询缓存余额
+    stmt = select(AccountBalance).where(
+        AccountBalance.account_id == account_id,
+        AccountBalance.as_of_dt == eod
+    )
+    record = db.session.execute(stmt).scalars().first()
     if record:
         return record.account_balance
 
     day_end = datetime(eod.year, eod.month, eod.day, 23, 59, 59)
-    raw_balance = db.session.query(
-        func.coalesce(func.sum(Transaction.trans_amount), 0.0)
-    ).filter(
+    # 计算截止日终的交易总金额
+    raw_stmt = select(func.coalesce(func.sum(Transaction.trans_amount), 0.0)).where(
         Transaction.trans_account_id == account_id,
         Transaction.trans_datetime <= day_end
-    ).scalar()
+    )
+    raw_balance = db.session.scalar(raw_stmt) or 0.0
 
     account = db.session.get(Account, account_id)
     if account and account.account_type.is_liability:
@@ -57,11 +63,13 @@ def get_account_eod_balance(account_id, as_of_date):
     has_fx = False
 
     if account and account.account_currency_name != 'HKD':
-        fx_transactions = Transaction.query.filter(
+        # 获取外币交易记录
+        fx_stmt = select(Transaction).where(
             Transaction.trans_account_id == account_id,
             Transaction.trans_datetime <= day_end,
             Transaction.trans_fx_currency_name.isnot(None)
-        ).all()
+        )
+        fx_transactions = db.session.execute(fx_stmt).scalars().all()
 
         for t in fx_transactions:
             has_fx = True
@@ -104,11 +112,12 @@ def get_fx_rate_to_hkd(currency_code, target_date):
     if currency_code == 'HKD':
         return 1.0
 
-    existing = CurrencyConversion.query.filter_by(
-        currency_name_lhs=currency_code,
-        currency_name_rhs='HKD',
-        currency_conversion_date=target_date,
-    ).first()
+    stmt = select(CurrencyConversion).where(
+        CurrencyConversion.currency_name_lhs == currency_code,
+        CurrencyConversion.currency_name_rhs == 'HKD',
+        CurrencyConversion.currency_conversion_date == target_date
+    )
+    existing = db.session.execute(stmt).scalars().first()
     if existing:
         return existing.currency_conversion_rate
 
@@ -149,31 +158,28 @@ def fx_rate():
 
 
 def _get_accounts_balance_status(account_ids, as_of_date):
-    """批量获取多个账户截至指定日期的交易核对状态汇总。
-    
-    对每个账户，从最早交易到 as_of_date，汇总所有交易状态：
-    - 存在未核对 → UNVERIFIED
-    - 存在有疑问 → FLAGGED
-    - 全部已对账 → RECONCILED
-    - 其他 → VERIFIED
-    - 无交易 → None
-    """
+    """批量获取多个账户截至指定日期的交易核对状态汇总。"""
     if not account_ids:
         return {}
-    results = db.session.query(
-        Transaction.trans_account_id,
-        Transaction.trans_status,
-        func.count(Transaction.trans_id)
-    ).filter(
-        Transaction.trans_account_id.in_(account_ids),
-        func.date(Transaction.trans_datetime) <= as_of_date
-    ).group_by(
-        Transaction.trans_account_id,
-        Transaction.trans_status
-    ).all()
+
+    stmt = (
+        select(
+            Transaction.trans_account_id,
+            Transaction.trans_status,
+            func.count(Transaction.trans_id)
+        )
+        .where(
+            Transaction.trans_account_id.in_(account_ids),
+            func.date(Transaction.trans_datetime) <= as_of_date
+        )
+        .group_by(Transaction.trans_account_id, Transaction.trans_status)
+    )
+    results = db.session.execute(stmt).all()
+
     status_by_account = {}
     for acct_id, status, count in results:
         status_by_account.setdefault(acct_id, {})[status] = count
+
     final_status = {}
     for acct_id in account_ids:
         counts = status_by_account.get(acct_id, {})
@@ -207,12 +213,18 @@ def compute_balance_sheet(accounts_list, start_date, end_date):
 
         currency = account.account_currency_name
 
-        balance_start_record = AccountBalance.query.filter_by(
-            account_id=account.account_id, as_of_dt=day_before_start
-        ).first()
-        balance_end_record = AccountBalance.query.filter_by(
-            account_id=account.account_id, as_of_dt=end_date
-        ).first()
+        # 查询日终余额记录（可能含外币信息）
+        stmt_start = select(AccountBalance).where(
+            AccountBalance.account_id == account.account_id,
+            AccountBalance.as_of_dt == day_before_start
+        )
+        balance_start_record = db.session.execute(stmt_start).scalars().first()
+
+        stmt_end = select(AccountBalance).where(
+            AccountBalance.account_id == account.account_id,
+            AccountBalance.as_of_dt == end_date
+        )
+        balance_end_record = db.session.execute(stmt_end).scalars().first()
 
         if balance_end_record and balance_end_record.account_fx_currency_name:
             hkd_start = round(balance_start, 2)
@@ -271,7 +283,9 @@ def compute_balance_sheet(accounts_list, start_date, end_date):
         'total_liability_end': total_liability_end,
         'net_worth_start': round(total_asset_start - total_liability_start, 2),
         'net_worth_end': round(total_asset_end - total_liability_end, 2),
-        'net_worth_change': round((total_asset_end - total_liability_end) - (total_asset_start - total_liability_start), 2),
+        'net_worth_change': round(
+            (total_asset_end - total_liability_end) - (total_asset_start - total_liability_start), 2
+        ),
     }
 
 
@@ -298,31 +312,40 @@ def list_accounts():
     )
 
     if current_user.can_view_family_data():
-        family_owner_ids = [o.owner_id for o in Owner.query.filter_by(family_id=owner.family_id).all()]
-        accounts_list = Account.query.filter(
-            Account.account_owner_id.in_(family_owner_ids)
-        ).order_by(
-            nullsfirst(Account.account_close_date),
-            type_order,
-            Account.account_owner_id,
-            Account.account_custodian,
-            Account.account_currency_name,
-            Account.account_name,
-            Account.account_other_name
-        ).all()
-    else:
-        accounts_list = Account.query.filter_by(
-            account_owner_id=owner.owner_id
-        ).order_by(
-            nullsfirst(Account.account_close_date),
-            type_order,
-            Account.account_owner_id,
-            Account.account_custodian,
-            Account.account_currency_name,
-            Account.account_name,
-            Account.account_other_name
-        ).all()
+        # 获取家庭成员的所有 owner_id
+        family_owner_stmt = select(Owner).where(Owner.family_id == owner.family_id)
+        family_owners = db.session.execute(family_owner_stmt).scalars().all()
+        family_owner_ids = [o.owner_id for o in family_owners]
 
+        stmt = (
+            select(Account)
+            .where(Account.account_owner_id.in_(family_owner_ids))
+            .order_by(
+                nullsfirst(Account.account_close_date),
+                type_order,
+                Account.account_owner_id,
+                Account.account_custodian,
+                Account.account_currency_name,
+                Account.account_name,
+                Account.account_other_name
+            )
+        )
+    else:
+        stmt = (
+            select(Account)
+            .where(Account.account_owner_id == owner.owner_id)
+            .order_by(
+                nullsfirst(Account.account_close_date),
+                type_order,
+                Account.account_owner_id,
+                Account.account_custodian,
+                Account.account_currency_name,
+                Account.account_name,
+                Account.account_other_name
+            )
+        )
+
+    accounts_list = db.session.execute(stmt).scalars().all()
     members = get_family_members()
 
     total = len(accounts_list)
@@ -456,6 +479,10 @@ def add_account():
 def edit_account(account_id):
     """编辑账户"""
     owner = get_user_owner()
+    if not owner:
+        flash('请先设置你的个人信息')
+        return redirect(url_for('auth.login'))
+
     account = db.session.get(Account, account_id)
     if not account:
         flash('账户不存在')
@@ -506,6 +533,10 @@ def edit_account(account_id):
 def check_delete_account(account_id):
     """检查账户关联交易（AJAX），返回删除确认弹窗 HTML"""
     owner = get_user_owner()
+    if not owner:
+        flash('请先设置你的个人信息')
+        return redirect(url_for('auth.login'))
+    
     account = db.session.get(Account, account_id)
     if not account:
         return '<p style="color: #e74c3c; text-align: center;">账户不存在</p>'
@@ -513,10 +544,13 @@ def check_delete_account(account_id):
     if account.account_owner_id != owner.owner_id and not current_user.is_adult():
         return '<p style="color: #e74c3c; text-align: center;">无权删除此账户</p>'
 
-    transaction_count = Transaction.query.filter_by(trans_account_id=account_id).count()
+    # 关联交易计数
+    count_stmt = select(func.count()).select_from(Transaction).where(
+        Transaction.trans_account_id == account_id
+    )
+    transaction_count = db.session.scalar(count_stmt)
     csrf_token = generate_csrf()
 
-    # 无关联交易，直接确认删除
     if transaction_count == 0:
         return f'''<div id="delete-content-data">
             <p style="text-align: center; margin-bottom: 16px;">该账户没有关联交易，可以安全删除。</p>
@@ -530,12 +564,21 @@ def check_delete_account(account_id):
             </form>
         </div>'''
 
-    # 有关联交易，显示处理选项
-    family_owner_ids = [o.owner_id for o in Owner.query.filter_by(family_id=owner.family_id).all()]
-    target_accounts = Account.query.filter(
-        Account.account_owner_id.in_(family_owner_ids),
-        Account.account_id != account_id
-    ).order_by(Account.account_type, Account.account_custodian, Account.account_name).all()
+    # 获取家庭成员的所有 owner_id
+    family_owner_stmt = select(Owner).where(Owner.family_id == owner.family_id)
+    family_owners = db.session.execute(family_owner_stmt).scalars().all()
+    family_owner_ids = [o.owner_id for o in family_owners]
+
+    # 目标账户列表（排除自身）
+    target_stmt = (
+        select(Account)
+        .where(
+            Account.account_owner_id.in_(family_owner_ids),
+            Account.account_id != account_id
+        )
+        .order_by(Account.account_type, Account.account_custodian, Account.account_name)
+    )
+    target_accounts = db.session.execute(target_stmt).scalars().all()
 
     html = f'''<div id="delete-content-data">
     <p style="margin-bottom: 12px;">账户 <strong>"{account.account_name}"</strong> 有 <strong>{transaction_count}</strong> 笔关联交易。</p>
@@ -589,6 +632,10 @@ def check_delete_account(account_id):
 def confirm_delete_account(account_id):
     """确认删除账户（处理关联交易）"""
     owner = get_user_owner()
+    if not owner:
+        flash('请先设置你的个人信息')
+        return redirect(url_for('auth.login'))
+    
     account = db.session.get(Account, account_id)
     if not account:
         flash('账户不存在')
@@ -608,13 +655,18 @@ def confirm_delete_account(account_id):
             return redirect(url_for('accounts.list_accounts'))
 
         # 迁移所有关联交易到目标账户
-        count = Transaction.query.filter_by(trans_account_id=account_id).update(
-            {'trans_account_id': target_account_id}
+        upd_stmt = (
+            update(Transaction)
+            .where(Transaction.trans_account_id == account_id)
+            .values(trans_account_id=target_account_id)
         )
+        result = cast(CursorResult, db.session.execute(upd_stmt))
+        count = result.rowcount
         flash(f'已将 {count} 笔交易迁移到 "{target_account.account_name}"')
     else:
         # 删除所有关联交易（含转账配对）
-        transactions = Transaction.query.filter_by(trans_account_id=account_id).all()
+        trans_stmt = select(Transaction).where(Transaction.trans_account_id == account_id)
+        transactions = db.session.execute(trans_stmt).scalars().all()
         count = len(transactions)
         for t in transactions:
             if t.trans_counter_id:
@@ -625,7 +677,10 @@ def confirm_delete_account(account_id):
         flash(f'已删除 {count} 笔关联交易')
 
     # 删除 Bluecoins 映射
-    BluecoinsAccountMapping.query.filter_by(account_id=account_id).delete()
+    del_mapping_stmt = delete(BluecoinsAccountMapping).where(
+        BluecoinsAccountMapping.account_id == account_id
+    )
+    db.session.execute(del_mapping_stmt)
 
     # 删除账户
     db.session.delete(account)

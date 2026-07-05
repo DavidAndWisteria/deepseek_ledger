@@ -1,6 +1,7 @@
 import re
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required, current_user
+from sqlalchemy import select
 from app import db
 from app.models import User, Family, Owner, UserRole
 
@@ -34,7 +35,11 @@ def register():
             errors.append('密码至少8个字符')
         if not re.match(r'^[a-zA-Z0-9_]+$', username):
             errors.append('用户名只能包含字母、数字和下划线')
-        if User.query.filter_by(username=username).first():
+        
+        # 替换 User.query.filter_by(username=username).first()
+        stmt = select(User).where(User.username == username)
+        existing_user = db.session.execute(stmt).scalars().first()
+        if existing_user:
             errors.append('用户名已存在')
         if not family_name:
             errors.append('家庭名称不能为空')
@@ -85,7 +90,10 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '')
         password = request.form.get('password', '')
-        user = User.query.filter_by(username=username).first()
+        
+        # 替换 User.query.filter_by(username=username).first()
+        stmt = select(User).where(User.username == username)
+        user = db.session.execute(stmt).scalars().first()
         
         if user and user.check_password(password):
             login_user(user)

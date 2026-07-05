@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, flash, Response, session
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
+from sqlalchemy import select
 from app import db
 from app.models import (
     Account, Category, Owner, AccountType, CategoryType,
@@ -113,15 +114,30 @@ def upload_transactions():
     
     # 查询现有账户和分类列表供手动映射
     owner = current_user.owner
-    family_owner_ids = [o.owner_id for o in Owner.query.filter_by(family_id=owner.family_id).all()]
-    accounts = Account.query.filter(
-        Account.account_owner_id.in_(family_owner_ids)
-    ).order_by(Account.account_type, Account.account_custodian, Account.account_name).all()
+    # 替换 Owner.query.filter_by -> select(Owner).where
+    family_owner_stmt = select(Owner).where(Owner.family_id == owner.family_id)
+    family_owners = db.session.execute(family_owner_stmt).scalars().all()
+    family_owner_ids = [o.owner_id for o in family_owners]
     
-    all_categories = Category.query.order_by(
-        Category.category_type, Category.category_class, Category.category_subclass
-    ).all()
-    members = Owner.query.filter_by(family_id=owner.family_id).all()
+    # 替换 Account.query.filter -> select(Account).where
+    account_stmt = (
+        select(Account)
+        .where(Account.account_owner_id.in_(family_owner_ids))
+        .order_by(Account.account_type, Account.account_custodian, Account.account_name)
+    )
+    accounts = db.session.execute(account_stmt).scalars().all()
+    
+    # 替换 Category.query.order_by -> select(Category).order_by
+    category_stmt = (
+        select(Category)
+        .order_by(Category.category_type, Category.category_class, Category.category_subclass)
+    )
+    all_categories = db.session.execute(category_stmt).scalars().all()
+    
+    # 替换 Owner.query.filter_by -> select(Owner).where
+    members = db.session.execute(
+        select(Owner).where(Owner.family_id == owner.family_id)
+    ).scalars().all()
     
     return render_template(
         'import.html',
@@ -254,7 +270,7 @@ def confirm_transactions():
                     try:
                         cat_type = CategoryType(cat_type_str)
                     except ValueError:
-                        cat_type = CategoryType.E
+                        cat_type = CategoryType.EXPENSE
                     
                     cat = Category(
                         category_name=category_name,
@@ -266,13 +282,18 @@ def confirm_transactions():
                     db.session.add(cat)
                     db.session.flush()
                     
-                    existing_mapping = BluecoinsCategoryMapping.query.filter_by(
-                        bluecoins_year=bc_year,
-                        bluecoins_type=bc_type,
-                        bluecoins_group=bc_group,
-                        bluecoins_category=bc_category,
-                        bluecoins_title=bc_title
-                    ).first()
+                    # 替换 BluecoinsCategoryMapping.query.filter_by(...).first()
+                    existing_stmt = (
+                        select(BluecoinsCategoryMapping)
+                        .where(
+                            BluecoinsCategoryMapping.bluecoins_year == bc_year,
+                            BluecoinsCategoryMapping.bluecoins_type == bc_type,
+                            BluecoinsCategoryMapping.bluecoins_group == bc_group,
+                            BluecoinsCategoryMapping.bluecoins_category == bc_category,
+                            BluecoinsCategoryMapping.bluecoins_title == bc_title
+                        )
+                    )
+                    existing_mapping = db.session.execute(existing_stmt).scalars().first()
                     if existing_mapping:
                         existing_mapping.category_id = cat.category_id
                         existing_mapping.is_manual = True
