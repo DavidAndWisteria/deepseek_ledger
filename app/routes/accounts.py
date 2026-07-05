@@ -77,7 +77,7 @@ def get_account_eod_balance(account_id, as_of_date):
             elif fx_rate > 0:
                 fx_cost_numerator += fx_amt / fx_rate
                 fx_cost_denominator += fx_amt
-                deposit_units += fx_amte
+                deposit_units += fx_amt
 
     fx_cost_rate = (fx_cost_numerator / fx_cost_denominator) if fx_cost_denominator != 0 else None
     acct_fx_currency = account.account_currency_name if (has_fx and account) else None
