@@ -1,6 +1,7 @@
 import pytest
 from app import db
 from app.models import User, Family, Owner, UserRole
+from sqlalchemy import select
 
 
 class TestAuthRoutes:
@@ -27,7 +28,7 @@ class TestAuthRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            user = User.query.filter_by(username='newuser').first()
+            user = db.session.scalars(select(User).where(User.username == 'newuser')).first()
             assert user is not None
             assert user.family is not None
             assert user.owner is not None

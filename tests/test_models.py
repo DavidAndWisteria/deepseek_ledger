@@ -5,6 +5,7 @@ from app.models import (
     AccountType, CategoryType, UserRole, TransactionStatus
 )
 from datetime import datetime, timezone
+from sqlalchemy import select
 
 
 class TestUserModel:
@@ -75,7 +76,7 @@ class TestFamilyModel:
             user.set_password('pwd')
             db.session.add(user)
             db.session.commit()
-            
+            assert user.family is not None
             assert user.family.family_name == '关系测试'
 
 
@@ -89,6 +90,7 @@ class TestOwnerModel:
             db.session.commit()
             assert owner.owner_id is not None
             assert owner.owner_name == '新成员'
+            assert owner.user is not None
             assert owner.user.username == 'testuser'
 
 
@@ -251,7 +253,9 @@ class TestTransactionModel:
             
             assert trans_out.is_transfer() is True
             assert trans_in.is_transfer() is True
+            assert trans_out.counter_transaction is not None
             assert trans_out.counter_transaction.trans_id == trans_in.trans_id
+            assert trans_in.counter_transaction is not None
             assert trans_in.counter_transaction.trans_id == trans_out.trans_id
 
     def test_transaction_currency(self, app, test_owner, test_account, test_category):
@@ -286,6 +290,7 @@ class TestTransactionModel:
         """测试修改交易状态"""
         with app.app_context():
             transaction = db.session.get(Transaction, test_transaction)
+            assert transaction is not None
             assert transaction.trans_status == TransactionStatus.UNVERIFIED
             transaction.trans_status = TransactionStatus.VERIFIED
             db.session.commit()
@@ -296,38 +301,7 @@ class TestTransactionModel:
         with app.app_context():
             transaction = db.session.get(Transaction, test_transaction)
             for status in TransactionStatus:
-                transaction.trans_status = status
-                db.session.commit()
-                assert transaction.trans_status == status
-
-    def test_transaction_default_status(self, app, test_owner, test_account, test_category):
-        """测试交易默认状态为未核对"""
-        with app.app_context():
-            transaction = Transaction(
-                trans_datetime=datetime.now(timezone.utc),
-                trans_amount=50.00,
-                trans_account_id=test_account,
-                trans_category_id=test_category,
-                trans_owner_id=test_owner
-            )
-            db.session.add(transaction)
-            db.session.commit()
-            assert transaction.trans_status == TransactionStatus.UNVERIFIED
-
-    def test_transaction_status_change(self, app, test_transaction):
-        """测试修改交易状态"""
-        with app.app_context():
-            transaction = db.session.get(Transaction, test_transaction)
-            assert transaction.trans_status == TransactionStatus.UNVERIFIED
-            transaction.trans_status = TransactionStatus.VERIFIED
-            db.session.commit()
-            assert transaction.trans_status == TransactionStatus.VERIFIED
-
-    def test_transaction_status_enum_values(self, app, test_transaction):
-        """测试所有状态枚举值"""
-        with app.app_context():
-            transaction = db.session.get(Transaction, test_transaction)
-            for status in TransactionStatus:
+                assert transaction is not None
                 transaction.trans_status = status
                 db.session.commit()
                 assert transaction.trans_status == status

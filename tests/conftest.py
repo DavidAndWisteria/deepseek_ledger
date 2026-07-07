@@ -85,6 +85,7 @@ def logged_in_client(app, test_user):
     client = app.test_client()
     with app.app_context():
         user = db.session.get(User, test_user)
+        assert user is not None
         client.post('/login', data={
             'username': user.username,
             'password': 'password123'
@@ -96,6 +97,8 @@ def logged_in_client(app, test_user):
 def test_owner(app, test_user):
     with app.app_context():
         user = db.session.get(User, test_user)
+        assert user is not None
+        assert user.owner is not None
         return user.owner.owner_id
 
 
@@ -103,6 +106,7 @@ def test_owner(app, test_user):
 def test_family(app, test_user):
     with app.app_context():
         user = db.session.get(User, test_user)
+        assert user is not None
         return user.family_id
 
 

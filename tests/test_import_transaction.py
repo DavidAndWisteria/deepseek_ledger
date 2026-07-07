@@ -4,10 +4,11 @@ from app import db
 from app.models import (
     Account, Category, Owner, User, Transaction,
     AccountType, CategoryType,
-    BluecoinsAccountMapping, BluecoinsCategoryMapping
+    BluecoinsAccountMapping, BluecoinsCategoryMapping, TransactionStatus
 )
 from app.services.import_service import ImportService
 from unittest.mock import patch
+from sqlalchemy import select, func
 
 
 # ===============================================================
@@ -78,23 +79,26 @@ MALFORMED_CSV = "not,a,valid,csv\n1,2,3,4,5,6,7,8,9,10,11,12,13"
 
 
 # ===============================================================
-# 辅助函数
+# 辅助函数（全部使用 SQLAlchemy 2.0）
 # ===============================================================
 
 def count_transactions():
-    return Transaction.query.count()
+    stmt = select(func.count()).select_from(Transaction)
+    return db.session.scalar(stmt)
 
 
 def count_account_mappings():
-    return BluecoinsAccountMapping.query.count()
+    stmt = select(func.count()).select_from(BluecoinsAccountMapping)
+    return db.session.scalar(stmt)
 
 
 def count_category_mappings():
-    return BluecoinsCategoryMapping.query.count()
+    stmt = select(func.count()).select_from(BluecoinsCategoryMapping)
+    return db.session.scalar(stmt)
 
 
 def setup_accounts_and_categories(app, test_owner):
-    """创建测试用的账户和分类"""
+    """创建测试用的账户和分类，返回 id 字典"""
     with app.app_context():
         test_owner_id = test_owner
 
@@ -166,7 +170,7 @@ class TestImportTransactionsService:
             assert result['skipped'] == 0
             assert result['failed'] == 0
 
-            txn = Transaction.query.first()
+            txn = db.session.scalars(select(Transaction)).first()
             assert txn is not None
             assert txn.trans_amount == -100
             assert txn.trans_account_id == ids['account1_id']
@@ -197,7 +201,8 @@ class TestImportTransactionsService:
             result = service.import_transactions_csv(SINGLE_INCOME)
 
             assert result['success'] == 1
-            txn = Transaction.query.first()
+            txn = db.session.scalars(select(Transaction)).first()
+            assert txn is not None
             assert txn.trans_amount == 50000
             assert txn.trans_category_id == ids['cat2_id']
 
@@ -297,7 +302,8 @@ class TestImportTransactionsService:
             )
 
             assert result['success'] == 1
-            txn = Transaction.query.first()
+            txn = db.session.scalars(select(Transaction)).first()
+            assert txn is not None
             assert txn.trans_account_id == ids['account1_id']
 
     def test_import_with_manual_category_mapping(self, app, test_user, test_owner):
@@ -318,7 +324,8 @@ class TestImportTransactionsService:
             )
 
             assert result['success'] == 1
-            txn = Transaction.query.first()
+            txn = db.session.scalars(select(Transaction)).first()
+            assert txn is not None
             assert txn.trans_category_id == ids['cat1_id']
 
     def test_import_skip_account(self, app, test_user, test_owner):
@@ -396,19 +403,23 @@ class TestImportTransactionsService:
             service.import_transactions_csv(SINGLE_EXPENSE)
 
             # 账户映射
-            acct_map = BluecoinsAccountMapping.query.filter_by(
-                bluecoins_name='测试银行卡'
+            acct_map = db.session.scalars(
+                select(BluecoinsAccountMapping).where(
+                    BluecoinsAccountMapping.bluecoins_name == '测试银行卡'
+                )
             ).first()
             assert acct_map is not None
             assert acct_map.account_id == ids['account1_id']
             assert acct_map.is_manual is False
 
             # 分类映射
-            cat_map = BluecoinsCategoryMapping.query.filter_by(
-                bluecoins_type='支出',
-                bluecoins_group='日常',
-                bluecoins_category='餐饮',
-                bluecoins_title='午餐'
+            cat_map = db.session.scalars(
+                select(BluecoinsCategoryMapping).where(
+                    BluecoinsCategoryMapping.bluecoins_type == '支出',
+                    BluecoinsCategoryMapping.bluecoins_group == '日常',
+                    BluecoinsCategoryMapping.bluecoins_category == '餐饮',
+                    BluecoinsCategoryMapping.bluecoins_title == '午餐'
+                )
             ).first()
             assert cat_map is not None
             assert cat_map.category_id == ids['cat1_id']
@@ -469,7 +480,7 @@ class TestImportTransactionsService:
             assert result['success'] == 2  # transfer_pair counts as 2 successes
             assert result['failed'] == 0
 
-            txns = Transaction.query.all()
+            txns = db.session.scalars(select(Transaction)).all()
             assert len(txns) == 2
             # 两个交易应互为 counter
             t1, t2 = txns
@@ -488,7 +499,8 @@ class TestImportTransactionsService:
             result = service.import_transactions_csv(FX_TRANSACTION)
 
             assert result['success'] == 1
-            txn = Transaction.query.first()
+            txn = db.session.scalars(select(Transaction)).first()
+            assert txn is not None
             assert txn.trans_fx_currency_name == 'USD'
             assert txn.trans_fx_amount == -50
 
@@ -506,7 +518,8 @@ class TestImportTransactionsService:
                 result = service.import_transactions_csv(csv_no_rate)
 
             assert result['success'] == 1
-            txn = Transaction.query.first()
+            txn = db.session.scalars(select(Transaction)).first()
+            assert txn is not None
             assert txn.trans_fx_currency_name == 'USD'
             # 应使用 fallback 汇率
             assert txn.trans_fx_rate == 0.0  # fallback sets stored_rate=0.0
@@ -515,12 +528,12 @@ class TestImportTransactionsService:
         """导入的交易状态默认为 UNVERIFIED"""
         ids = setup_accounts_and_categories(app, test_owner)
         with app.app_context():
-            from app.models import TransactionStatus
             user = db.session.get(User, test_user)
             service = ImportService(user)
             service.import_transactions_csv(SINGLE_EXPENSE)
 
-            txn = Transaction.query.first()
+            txn = db.session.scalars(select(Transaction)).first()
+            assert txn is not None
             assert txn.trans_status == TransactionStatus.UNVERIFIED
 
     def test_transfer_pair_has_transfer_category(self, app, test_user, test_owner):
@@ -531,9 +544,10 @@ class TestImportTransactionsService:
             service = ImportService(user)
             service.import_transactions_csv(TRANSFER_PAIR)
 
-            txns = Transaction.query.all()
+            txns = db.session.scalars(select(Transaction)).all()
             for txn in txns:
                 cat = db.session.get(Category, txn.trans_category_id)
+                assert cat is not None
                 assert cat.category_type == CategoryType.TRANSFER
 
     def test_result_details_on_failure(self, app, test_user, test_owner):

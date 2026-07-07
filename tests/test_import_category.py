@@ -4,6 +4,7 @@ from app.models import (
     Category, User, CategoryType, BluecoinsCategoryMapping
 )
 from app.services.import_service import ImportService
+from sqlalchemy import select
 
 
 # ===============================================================
@@ -67,13 +68,17 @@ class TestImportCategories:
             service = ImportService(user)
             service.import_categories_csv(CATEGORIES_CSV)
 
-            cat = Category.query.filter_by(category_name='联博美国债券').first()
+            cat = db.session.scalars(
+                select(Category).where(Category.category_name == '联博美国债券')
+            ).first()
             assert cat is not None
             assert cat.category_type == CategoryType.INCOME
             assert cat.category_class == '投资'
             assert cat.category_subclass == '基金收息'
 
-            cat2 = Category.query.filter_by(category_name='交通').first()
+            cat2 = db.session.scalars(
+                select(Category).where(Category.category_name == '交通')
+            ).first()
             assert cat2 is not None
             assert cat2.category_type == CategoryType.EXPENSE
             assert cat2.category_class == '日常'
@@ -85,10 +90,12 @@ class TestImportCategories:
             service = ImportService(user)
             service.import_categories_csv(CATEGORIES_CSV)
 
-            mapping = BluecoinsCategoryMapping.query.filter_by(
-                bluecoins_group='投资',
-                bluecoins_category='基金收息',
-                bluecoins_title='U45024'
+            mapping = db.session.scalars(
+                select(BluecoinsCategoryMapping).where(
+                    BluecoinsCategoryMapping.bluecoins_group == '投资',
+                    BluecoinsCategoryMapping.bluecoins_category == '基金收息',
+                    BluecoinsCategoryMapping.bluecoins_title == 'U45024'
+                )
             ).first()
             assert mapping is not None
             assert mapping.is_manual is False
@@ -134,7 +141,9 @@ class TestImportCategories:
             service = ImportService(user)
             service.import_categories_csv(INCOME_CATEGORY_CSV)
 
-            cat = Category.query.filter_by(category_name='工资').first()
+            cat = db.session.scalars(
+                select(Category).where(Category.category_name == '工资')
+            ).first()
             assert cat is not None
             assert cat.category_type == CategoryType.INCOME
 
@@ -143,10 +152,11 @@ class TestImportCategories:
         with app.app_context():
             user = db.session.get(User, test_user)
             service = ImportService(user)
-            service.import_transactions_csv = lambda *a, **kw: None  # 只测分类
             service.import_categories_csv(TRANSFER_CATEGORY_CSV)
 
-            cat = Category.query.filter_by(category_name='账户转账').first()
+            cat = db.session.scalars(
+                select(Category).where(Category.category_name == '账户转账')
+            ).first()
             assert cat is not None
             assert cat.category_type == CategoryType.TRANSFER
 
@@ -171,18 +181,24 @@ class TestImportCategories:
             service.import_categories_csv(MIXED_CSV)
 
             # 日常杂货（零食和饮料合并为一条）
-            cat1 = Category.query.filter_by(category_name='日常杂货').first()
+            cat1 = db.session.scalars(
+                select(Category).where(Category.category_name == '日常杂货')
+            ).first()
             assert cat1 is not None
             assert cat1.category_class == '购物'
             assert cat1.category_type == CategoryType.EXPENSE
 
             # 对账调整
-            cat2 = Category.query.filter_by(category_name='对账调整').first()
+            cat2 = db.session.scalars(
+                select(Category).where(Category.category_name == '对账调整')
+            ).first()
             assert cat2 is not None
             assert cat2.category_type == CategoryType.SPECIAL
 
             # 运费
-            cat3 = Category.query.filter_by(category_name='运费').first()
+            cat3 = db.session.scalars(
+                select(Category).where(Category.category_name == '运费')
+            ).first()
             assert cat3 is not None
             assert cat3.category_class == '购物'
 
@@ -193,9 +209,11 @@ class TestImportCategories:
             service = ImportService(user)
             service.import_categories_csv(CATEGORIES_CSV)
 
-            mapping = BluecoinsCategoryMapping.query.filter_by(
-                bluecoins_group='投资',
-                bluecoins_category='基金收息'
+            mapping = db.session.scalars(
+                select(BluecoinsCategoryMapping).where(
+                    BluecoinsCategoryMapping.bluecoins_group == '投资',
+                    BluecoinsCategoryMapping.bluecoins_category == '基金收息'
+                )
             ).first()
             assert mapping is not None
             assert not hasattr(mapping, 'owner_id')

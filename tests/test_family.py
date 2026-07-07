@@ -1,6 +1,7 @@
 import pytest
 from app import db
 from app.models import Family, User, Owner, UserRole
+from sqlalchemy import select
 
 
 class TestFamilyRoutes:
@@ -29,10 +30,10 @@ class TestFamilyRoutes:
         response = logged_in_client.get('/family')
         assert response.status_code == 200
         content = response.data.decode('utf-8')
+        print(content)
         # 仍然只有 1 名成员（家庭共享被过滤）
         assert '1 名成员' in content
-        # 家庭共享名称不应出现在成员列表中
-        assert '测试家庭' not in content or '家庭共享' not in content
+        assert '家庭共享' not in content
 
     def test_family_adult_count(self, logged_in_client, app, test_family):
         """验证家庭页面成人计数正确（区分成人/小孩）"""
@@ -62,7 +63,9 @@ class TestFamilyRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            user = User.query.filter_by(username='newmember').first()
+            user = db.session.scalars(
+                select(User).where(User.username == 'newmember')
+            ).first()
             assert user is not None
             assert user.role == UserRole.CHILD
             assert user.family_id == test_family
@@ -80,13 +83,18 @@ class TestFamilyRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            user = User.query.filter_by(username='mother').first()
+            user = db.session.scalars(
+                select(User).where(User.username == 'mother')
+            ).first()
+            assert user is not None
             assert user.is_adult() is True
 
     def test_edit_member(self, logged_in_client, app, test_user):
         """编辑成员信息"""
         with app.app_context():
-            user = db.session.get(User, test_user)
+            user = db.session.get(User, test_user)  
+            assert user is not None
+            assert user.owner is not None
             owner_id = user.owner.owner_id
         
         response = logged_in_client.post(f'/family/edit-member/{owner_id}', data={
@@ -118,6 +126,8 @@ class TestFamilyRoutes:
         """不能删除自己"""
         with app.app_context():
             user = db.session.get(User, test_user)
+            assert user is not None
+            assert user.owner is not None
             owner_id = user.owner.owner_id
         
         response = logged_in_client.post(f'/family/delete-member/{owner_id}', follow_redirects=True)
@@ -141,7 +151,10 @@ class TestFamilyRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            user = User.query.filter_by(username='resetpwd').first()
+            user = db.session.scalars(
+                select(User).where(User.username == 'resetpwd')
+            ).first()
+            assert user is not None
             assert user.check_password('newpassword123') is True
 
     def test_family_unauthenticated(self, client):

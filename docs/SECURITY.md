@@ -149,13 +149,13 @@ def sanitize_input(text):
 所有数据库操作通过 SQLAlchemy ORM，自动使用参数化查询：
 
 ```python
-# 安全：参数化查询
-User.query.filter_by(username=username).first()
+# 安全：参数化查询（SQLAlchemy 2.0 风格）
+from sqlalchemy import select
+db.session.scalars(select(User).where(User.username == username)).first()
 db.session.get(User, user_id)
 
 # 禁止：字符串拼接
 # db.session.execute(f"SELECT * FROM user WHERE username='{username}'")  # 危险！
-```
 
 ### 5.2 查询构建
 

@@ -9,6 +9,7 @@ from app.models import (
     BluecoinsAccountMapping, BluecoinsCategoryMapping
 )
 from app.routes.accounts import get_fx_rate_to_hkd
+from sqlalchemy import select, func
 
 
 class ImportService:
@@ -36,11 +37,15 @@ class ImportService:
     
     def _load_existing_mappings(self):
         """加载已存在的 Bluecoins 映射"""
-        mappings = BluecoinsAccountMapping.query.all()
+        # 账户映射
+        stmt = select(BluecoinsAccountMapping)
+        mappings = db.session.scalars(stmt).all()
         for m in mappings:
             self.account_map[m.bluecoins_name] = m.account_id
         
-        cat_mappings = BluecoinsCategoryMapping.query.all()
+        # 分类映射
+        stmt = select(BluecoinsCategoryMapping)
+        cat_mappings = db.session.scalars(stmt).all()
         for m in cat_mappings:
             key = (m.bluecoins_year, m.bluecoins_type, m.bluecoins_group,
                    m.bluecoins_category, m.bluecoins_title)
@@ -68,22 +73,25 @@ class ImportService:
         owner_name = owner_name.strip()
         
         if self.family_id:
-            family_owners = Owner.query.filter_by(family_id=self.family_id).all()
+            stmt = select(Owner).where(Owner.family_id == self.family_id)
+            family_owners = db.session.scalars(stmt).all()
             for o in family_owners:
                 if o.owner_name.strip() == owner_name:
                     return o
         
-        matched = Owner.query.filter_by(owner_name=owner_name).first()
+        stmt = select(Owner).where(Owner.owner_name == owner_name)
+        matched = db.session.scalars(stmt).first()
         if matched:
             return matched
         
         if self.family_id:
             family = db.session.get(Family, self.family_id)
             if family and family.family_name.strip() == owner_name:
-                family_owner = Owner.query.filter_by(
-                    family_id=self.family_id,
-                    owner_name=family.family_name
-                ).first()
+                stmt = select(Owner).where(
+                    Owner.family_id == self.family_id,
+                    Owner.owner_name == family.family_name
+                )
+                family_owner = db.session.scalars(stmt).first()
                 if not family_owner:
                     family_owner = Owner(
                         owner_name=family.family_name,
@@ -242,16 +250,18 @@ class ImportService:
             account_custodian, account_currency, owner.owner_id
         )
         
-        existing = Account.query.filter_by(
-            account_name=account_name,
-            account_type=account_type,
-            account_custodian=account_custodian,
-            account_currency_name=account_currency,
-            account_owner_id=owner.owner_id
-        ).first()
+        # 检查是否已存在相同账户
+        stmt = select(Account).where(
+            Account.account_name == account_name,
+            Account.account_type == account_type,
+            Account.account_custodian == account_custodian,
+            Account.account_currency_name == account_currency,
+            Account.account_owner_id == owner.owner_id
+        )
+        existing = db.session.scalars(stmt).first()
         
         if existing:
-            existing._existing = True
+            # existing._existing = True
             return existing, combination_key
         
         account = Account(
@@ -383,13 +393,13 @@ class ImportService:
         if category_type_str in ('I', 'E', 'T', 'S'):
             category_type = CategoryType(category_type_str)
         elif bc_type == '收入':
-            category_type = CategoryType.I
+            category_type = CategoryType.INCOME
         elif bc_type == '支出':
-            category_type = CategoryType.E
+            category_type = CategoryType.EXPENSE
         elif '转账' in bc_type:
-            category_type = CategoryType.T
+            category_type = CategoryType.TRANSFER
         else:
-            category_type = CategoryType.E
+            category_type = CategoryType.EXPENSE
         
         combination_key = (
             category_name_val,
@@ -399,12 +409,14 @@ class ImportService:
             category_type
         )
         
-        existing = Category.query.filter_by(
-            category_name=category_name_val,
-            category_class=category_class,
-            category_subclass=category_subclass,
-            category_type=category_type
-        ).first()
+        # 检查是否已存在
+        stmt = select(Category).where(
+            Category.category_name == category_name_val,
+            Category.category_class == category_class,
+            Category.category_subclass == category_subclass,
+            Category.category_type == category_type
+        )
+        existing = db.session.scalars(stmt).first()
         
         if existing:
             return existing, combination_key
@@ -512,13 +524,15 @@ class ImportService:
                     if existing_key[1] == bt and existing_key[2] == g and \
                        existing_key[3] == c and existing_key[4] == t:
                         del self.category_map[existing_key]
-                existing = BluecoinsCategoryMapping.query.filter_by(
-                    bluecoins_year=parts[0],
-                    bluecoins_type=parts[1],
-                    bluecoins_group=parts[2],
-                    bluecoins_category=parts[3],
-                    bluecoins_title=parts[4]
-                ).first()
+                # 检查现有映射
+                stmt = select(BluecoinsCategoryMapping).where(
+                    BluecoinsCategoryMapping.bluecoins_year == parts[0],
+                    BluecoinsCategoryMapping.bluecoins_type == parts[1],
+                    BluecoinsCategoryMapping.bluecoins_group == parts[2],
+                    BluecoinsCategoryMapping.bluecoins_category == parts[3],
+                    BluecoinsCategoryMapping.bluecoins_title == parts[4]
+                )
+                existing = db.session.scalars(stmt).first()
                 if existing:
                     existing.category_id = int(category_id)
                     existing.is_manual = True
@@ -730,16 +744,21 @@ class ImportService:
         if bluecoins_name in self.new_account_mappings:
             return self.new_account_mappings[bluecoins_name]
         
-        account = Account.query.filter_by(
-            account_name=bluecoins_name,
-            account_owner_id=self.owner.owner_id
-        ).first()
+        # 先查当前 owner 的账户
+        stmt = select(Account).where(
+            Account.account_name == bluecoins_name,
+            Account.account_owner_id == self.owner.owner_id
+        )
+        account = db.session.scalars(stmt).first()
         if not account:
-            family_owner_ids = [o.owner_id for o in Owner.query.filter_by(family_id=self.family_id).all()]
-            account = Account.query.filter(
+            # 查家庭范围内所有账户
+            family_owner_stmt = select(Owner.owner_id).where(Owner.family_id == self.family_id)
+            family_owner_ids = db.session.scalars(family_owner_stmt).all()
+            stmt = select(Account).where(
                 Account.account_name == bluecoins_name,
                 Account.account_owner_id.in_(family_owner_ids)
-            ).first()
+            )
+            account = db.session.scalars(stmt).first()
         
         if account:
             mapping = BluecoinsAccountMapping(
@@ -761,18 +780,24 @@ class ImportService:
             if g == group and c == category_name and t == title and bt == bc_type:
                 return cat_id
         
-        cat = Category.query.filter_by(category_name=title, category_subclass=category_name).first()
+        # 尝试通过 category_name 直接匹配
+        stmt = select(Category).where(Category.category_name == title, Category.category_subclass == category_name)
+        cat = db.session.scalars(stmt).first()
         if not cat:
-            cat = Category.query.filter_by(category_name=title).first()
+            stmt = select(Category).where(Category.category_name == title)
+            cat = db.session.scalars(stmt).first()
         
         if cat:
             try:
                 key = ('', bc_type, group, category_name, title)
-                existing = BluecoinsCategoryMapping.query.filter_by(
-                    bluecoins_year='', bluecoins_type=bc_type,
-                    bluecoins_group=group, bluecoins_category=category_name,
-                    bluecoins_title=title
-                ).first()
+                stmt = select(BluecoinsCategoryMapping).where(
+                    BluecoinsCategoryMapping.bluecoins_year == '',
+                    BluecoinsCategoryMapping.bluecoins_type == bc_type,
+                    BluecoinsCategoryMapping.bluecoins_group == group,
+                    BluecoinsCategoryMapping.bluecoins_category == category_name,
+                    BluecoinsCategoryMapping.bluecoins_title == title
+                )
+                existing = db.session.scalars(stmt).first()
                 if existing:
                     existing.category_id = cat.category_id
                 else:
@@ -792,7 +817,8 @@ class ImportService:
     
     def _get_transfer_category_id(self):
         """获取或创建转账分类"""
-        cat = Category.query.filter_by(category_type=CategoryType.TRANSFER).first()
+        stmt = select(Category).where(Category.category_type == CategoryType.TRANSFER)
+        cat = db.session.scalars(stmt).first()
         if cat:
             return cat.category_id
         

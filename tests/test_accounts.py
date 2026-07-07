@@ -1,6 +1,7 @@
 import pytest
 from app import db
 from app.models import Account, AccountType, Owner
+from sqlalchemy import select
 
 
 class TestAccountRoutes:
@@ -22,7 +23,7 @@ class TestAccountRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            account = Account.query.filter_by(account_name='测试账户').first()
+            account = db.session.scalars(select(Account).where(Account.account_name == '测试账户')).first()
             assert account is not None
             assert account.account_type == AccountType.SAVING
 
@@ -44,6 +45,7 @@ class TestAccountRoutes:
         
         with app.app_context():
             account = db.session.get(Account, test_account)
+            assert account is not None
             assert account.account_name == '改名账户'
 
     def test_delete_account(self, logged_in_client, app, test_account):

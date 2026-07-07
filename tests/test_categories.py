@@ -1,6 +1,7 @@
 import pytest
 from app import db
 from app.models import Category, CategoryType
+from sqlalchemy import select
 
 
 class TestCategoryRoutes:
@@ -20,7 +21,9 @@ class TestCategoryRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            category = Category.query.filter_by(category_name='交通').first()
+            category = db.session.scalars(
+                select(Category).where(Category.category_name == '交通')
+            ).first()
             assert category is not None
             assert category.category_type == CategoryType.EXPENSE
 
@@ -35,7 +38,10 @@ class TestCategoryRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            category = Category.query.filter_by(category_name='餐饮').first()
+            category = db.session.scalars(
+                select(Category).where(Category.category_name == '餐饮')
+            ).first()
+            assert category is not None
             assert category.category_other_name == '吃饭'
 
     def test_add_income_category(self, logged_in_client, app):
@@ -48,7 +54,10 @@ class TestCategoryRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            category = Category.query.filter_by(category_name='工资').first()
+            category = db.session.scalars(
+                select(Category).where(Category.category_name == '工资')
+            ).first()
+            assert category is not None
             assert category.category_type == CategoryType.INCOME
 
     def test_edit_category(self, logged_in_client, app, test_category):
@@ -62,6 +71,7 @@ class TestCategoryRoutes:
         
         with app.app_context():
             category = db.session.get(Category, test_category)
+            assert category is not None
             assert category.category_name == '美食'
 
     def test_delete_category(self, logged_in_client, app, test_category):

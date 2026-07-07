@@ -7,6 +7,7 @@ from app.models import (
     BluecoinsAccountMapping
 )
 from app.services.import_service import ImportService
+from sqlalchemy import select, func
 
 
 # ===============================================================
@@ -51,11 +52,15 @@ CLOSE_DATE_SET_CSV = """账户,id,account_name,account_other_name,account_type,a
 # ===============================================================
 
 def count_accounts():
-    return Account.query.count()
+    """返回 Account 表行数 (SQLAlchemy 2.0)"""
+    stmt = select(func.count()).select_from(Account)
+    return db.session.scalar(stmt)
 
 
 def count_mappings():
-    return BluecoinsAccountMapping.query.count()
+    """返回 BluecoinsAccountMapping 表行数 (SQLAlchemy 2.0)"""
+    stmt = select(func.count()).select_from(BluecoinsAccountMapping)
+    return db.session.scalar(stmt)
 
 
 # ===============================================================
@@ -77,9 +82,15 @@ class TestImportAccounts:
             assert result['failed'] == 0
 
             # 验证账户已创建
-            assert Account.query.filter_by(account_name='众安港币活期').first() is not None
-            assert Account.query.filter_by(account_name='Dav Master').first() is not None
-            assert Account.query.filter_by(account_name='八达通').first() is not None
+            assert db.session.scalars(
+                select(Account).where(Account.account_name == '众安港币活期')
+            ).first() is not None
+            assert db.session.scalars(
+                select(Account).where(Account.account_name == 'Dav Master')
+            ).first() is not None
+            assert db.session.scalars(
+                select(Account).where(Account.account_name == '八达通')
+            ).first() is not None
 
     def test_import_creates_accounts(self, app, test_user):
         """导入后账户属性正确"""
@@ -88,7 +99,9 @@ class TestImportAccounts:
             service = ImportService(user)
             service.import_accounts_csv(ACCOUNTS_CSV)
 
-            acc = Account.query.filter_by(account_name='众安港币活期').first()
+            acc = db.session.scalars(
+                select(Account).where(Account.account_name == '众安港币活期')
+            ).first()
             assert acc is not None
             assert acc.account_type == AccountType.SAVING
             assert acc.account_custodian == '众安银行'
@@ -101,11 +114,16 @@ class TestImportAccounts:
             service = ImportService(user)
             service.import_accounts_csv(ACCOUNTS_CSV)
 
-            mapping = BluecoinsAccountMapping.query.filter_by(bluecoins_name='Dav - ZA').first()
+            mapping = db.session.scalars(
+                select(BluecoinsAccountMapping).where(
+                    BluecoinsAccountMapping.bluecoins_name == 'Dav - ZA'
+                )
+            ).first()
             assert mapping is not None
             assert mapping.is_manual is False
 
             acc = db.session.get(Account, mapping.account_id)
+            assert acc is not None
             assert acc.account_name == '众安港币活期'
 
     def test_import_skip_existing(self, app, test_user):
@@ -159,7 +177,9 @@ class TestImportAccounts:
             service = ImportService(user)
             service.import_accounts_csv(CLOSE_DATE_NONE_CSV)
 
-            acc = Account.query.filter_by(account_name='未关闭账户').first()
+            acc = db.session.scalars(
+                select(Account).where(Account.account_name == '未关闭账户')
+            ).first()
             assert acc is not None
             assert acc.account_close_date is None
 
@@ -170,7 +190,9 @@ class TestImportAccounts:
             service = ImportService(user)
             service.import_accounts_csv(CLOSE_DATE_SET_CSV)
 
-            acc = Account.query.filter_by(account_name='已关闭账户').first()
+            acc = db.session.scalars(
+                select(Account).where(Account.account_name == '已关闭账户')
+            ).first()
             assert acc is not None
             assert acc.account_close_date is not None
             assert acc.account_close_date.year == 2023
@@ -184,7 +206,9 @@ class TestImportAccounts:
             service = ImportService(user)
             service.import_accounts_csv(ACCOUNTS_CSV)
 
-            acc = Account.query.filter_by(account_name='众安港币活期').first()
+            acc = db.session.scalars(
+                select(Account).where(Account.account_name == '众安港币活期')
+            ).first()
             assert acc is not None
             assert acc.account_create_date is not None
             assert acc.account_create_date.year == 2022
@@ -200,7 +224,9 @@ class TestImportAccounts:
 
             assert result['success'] == 1
 
-            acc = Account.query.filter_by(account_name='家庭账户').first()
+            acc = db.session.scalars(
+                select(Account).where(Account.account_name == '家庭账户')
+            ).first()
             assert acc is not None
             # 拥有者应为家庭共享 Owner
             owner = db.session.get(Owner, acc.account_owner_id)
@@ -214,8 +240,12 @@ class TestImportAccounts:
             service = ImportService(user)
             service.import_accounts_csv(FAMILY_OWNER_CSV)
 
-            acc = Account.query.filter_by(account_name='家庭账户').first()
+            acc = db.session.scalars(
+                select(Account).where(Account.account_name == '家庭账户')
+            ).first()
+            assert acc is not None
             owner = db.session.get(Owner, acc.account_owner_id)
+            assert owner is not None
             assert owner.user_id is None
 
     def test_import_unmatched_owner_fails(self, app, test_user):
@@ -271,7 +301,11 @@ class TestImportAccounts:
             service = ImportService(user)
             service.import_accounts_csv(ACCOUNTS_CSV)
 
-            mapping = BluecoinsAccountMapping.query.filter_by(bluecoins_name='Dav - ZA').first()
+            mapping = db.session.scalars(
+                select(BluecoinsAccountMapping).where(
+                    BluecoinsAccountMapping.bluecoins_name == 'Dav - ZA'
+                )
+            ).first()
             assert mapping is not None
-            # 验证没有 owner_id 属性（或为 None）
-            assert not hasattr(mapping, 'owner_id') or mapping.owner_id is None
+            # 验证没有 owner_id 属性
+            assert not hasattr(mapping, 'owner_id')

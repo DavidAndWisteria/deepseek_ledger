@@ -172,6 +172,10 @@ _private_variable = None
 
 ```python
 # 好的示例
+
+from sqlalchemy import select
+from app import db
+
 def process_records(user_id, start_date=None, end_date=None):
     """
     处理用户记录
@@ -187,14 +191,14 @@ def process_records(user_id, start_date=None, end_date=None):
     if not user_id:
         raise ValueError("user_id不能为空")
     
-    records = Record.query.filter_by(user_id=user_id)
+    stmt = select(Record).where(Record.user_id == user_id)
     
     if start_date:
-        records = records.filter(Record.date >= start_date)
+        stmt = stmt.where(Record.date >= start_date)
     if end_date:
-        records = records.filter(Record.date <= end_date)
+        stmt = stmt.where(Record.date <= end_date)
     
-    return records.all()
+    return db.session.scalars(stmt).all()
 
 # 不好的示例
 def p(u, s=None, e=None):
@@ -275,7 +279,7 @@ def process_user_input(user_input):
 
 # 2. 使用参数化查询（SQLAlchemy自动处理）
 # 好的做法
-Record.query.filter_by(user_id=user_id)
+select(Record).where(Record.user_id == user_id)
 
 # 3. 密码必须哈希
 from bcrypt import hashpw, gensalt

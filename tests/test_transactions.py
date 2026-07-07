@@ -1,7 +1,11 @@
 from datetime import datetime, timezone
 import pytest
 from app import db
-from app.models import Transaction, Account, Category, Owner, Family, CategoryType, AccountType, TransactionStatus, AccountBalance
+from app.models import (
+    Transaction, Account, Category, Owner, Family,
+    CategoryType, AccountType, TransactionStatus, AccountBalance
+)
+from sqlalchemy import select
 
 
 class TestTransactionRoutes:
@@ -26,7 +30,9 @@ class TestTransactionRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            transaction = Transaction.query.filter_by(trans_desc='工资').first()
+            transaction = db.session.scalars(
+                select(Transaction).where(Transaction.trans_desc == '工资')
+            ).first()
             assert transaction is not None
             assert transaction.trans_amount == 5000.00
             assert transaction.is_income() is True
@@ -46,7 +52,9 @@ class TestTransactionRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            transaction = Transaction.query.filter_by(trans_desc='午餐').first()
+            transaction = db.session.scalars(
+                select(Transaction).where(Transaction.trans_desc == '午餐')
+            ).first()
             assert transaction is not None
             assert transaction.trans_amount == -150.00
             assert transaction.is_expense() is True
@@ -77,8 +85,8 @@ class TestTransactionRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            transactions = Transaction.query.filter(
-                Transaction.trans_desc.contains('还款')
+            transactions = db.session.scalars(
+                select(Transaction).where(Transaction.trans_desc.contains('还款'))
             ).all()
             assert len(transactions) == 2
 
@@ -106,12 +114,14 @@ class TestTransactionRoutes:
         
         with app.app_context():
             transaction = db.session.get(Transaction, test_transaction)
+            assert transaction is not None
             assert transaction.trans_status == TransactionStatus.VERIFIED
 
     def test_update_status_to_unverified(self, logged_in_client, app, test_transaction):
         """更新交易状态回未核对"""
         with app.app_context():
             t = db.session.get(Transaction, test_transaction)
+            assert t is not None
             t.trans_status = TransactionStatus.VERIFIED
             db.session.commit()
         
@@ -123,6 +133,7 @@ class TestTransactionRoutes:
         
         with app.app_context():
             transaction = db.session.get(Transaction, test_transaction)
+            assert transaction is not None
             assert transaction.trans_status == TransactionStatus.UNVERIFIED
 
     def test_update_status_to_flagged(self, logged_in_client, app, test_transaction):
@@ -135,6 +146,7 @@ class TestTransactionRoutes:
         
         with app.app_context():
             transaction = db.session.get(Transaction, test_transaction)
+            assert transaction is not None
             assert transaction.trans_status == TransactionStatus.FLAGGED
 
     def test_update_status_invalid(self, logged_in_client, test_transaction):
@@ -176,6 +188,7 @@ class TestTransactionRoutes:
         with app.app_context():
             for tid in ids:
                 t = db.session.get(Transaction, tid)
+                assert t is not None
                 assert t.trans_status == TransactionStatus.VERIFIED
 
     def test_batch_verify_no_selection(self, logged_in_client):
@@ -272,7 +285,9 @@ class TestTransactionRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            transaction = Transaction.query.filter_by(trans_desc='新交易').first()
+            transaction = db.session.scalars(
+                select(Transaction).where(Transaction.trans_desc == '新交易')
+            ).first()
             assert transaction is not None
             assert transaction.trans_status == TransactionStatus.UNVERIFIED
 
@@ -290,6 +305,7 @@ class TestTransactionRoutes:
         
         with app.app_context():
             t = db.session.get(Transaction, test_transaction)
+            assert t is not None
             assert t.trans_desc == '已编辑'
             assert abs(t.trans_amount) == 999.99
 
@@ -307,6 +323,7 @@ class TestTransactionRoutes:
         
         with app.app_context():
             t = db.session.get(Transaction, test_transaction)
+            assert t is not None
             assert t.trans_datetime.month == 12
             assert t.trans_datetime.day == 25
             assert t.trans_datetime.hour == 8
@@ -368,7 +385,9 @@ class TestTransactionRoutes:
         assert response.status_code == 200
         
         with app.app_context():
-            t = Transaction.query.filter_by(trans_desc='精确时间测试').first()
+            t = db.session.scalars(
+                select(Transaction).where(Transaction.trans_desc == '精确时间测试')
+            ).first()
             assert t is not None
             assert t.trans_datetime.hour == 14
             assert t.trans_datetime.minute == 45
@@ -440,8 +459,10 @@ class TestTransactionRoutes:
         }, follow_redirects=True)
 
         with app.app_context():
-            transfers = Transaction.query.filter(
-                Transaction.trans_desc.contains('批量删除转账测试')
+            transfers = db.session.scalars(
+                select(Transaction).where(
+                    Transaction.trans_desc.contains('批量删除转账测试')
+                )
             ).all()
             assert len(transfers) == 2
             ids = [t.trans_id for t in transfers]
@@ -482,9 +503,11 @@ class TestTransactionRoutes:
         }, follow_redirects=True)
 
         with app.app_context():
-            remaining = AccountBalance.query.filter_by(
-                account_id=test_account,
-                as_of_dt=trans_date.date()
+            remaining = db.session.scalars(
+                select(AccountBalance).where(
+                    AccountBalance.account_id == test_account,
+                    AccountBalance.as_of_dt == trans_date.date()
+                )
             ).all()
             assert len(remaining) == 0
 
@@ -517,9 +540,11 @@ class TestTransactionRoutes:
         )
 
         with app.app_context():
-            remaining = AccountBalance.query.filter_by(
-                account_id=test_account,
-                as_of_dt=datetime(2026, 7, 15).date()
+            remaining = db.session.scalars(
+                select(AccountBalance).where(
+                    AccountBalance.account_id == test_account,
+                    AccountBalance.as_of_dt == datetime(2026, 7, 15).date()
+                )
             ).all()
             assert len(remaining) == 0
 
@@ -556,9 +581,11 @@ class TestTransactionRoutes:
         }, follow_redirects=True)
 
         with app.app_context():
-            remaining = AccountBalance.query.filter_by(
-                account_id=test_account,
-                as_of_dt=datetime(2026, 8, 10).date()
+            remaining = db.session.scalars(
+                select(AccountBalance).where(
+                    AccountBalance.account_id == test_account,
+                    AccountBalance.as_of_dt == datetime(2026, 8, 10).date()
+                )
             ).all()
             assert len(remaining) == 0
 
@@ -611,9 +638,11 @@ class TestTransactionRoutes:
 
         with app.app_context():
             for acct_id in [test_account, new_acct_id]:
-                remaining = AccountBalance.query.filter_by(
-                    account_id=acct_id,
-                    as_of_dt=datetime(2026, 9, 10).date()
+                remaining = db.session.scalars(
+                    select(AccountBalance).where(
+                        AccountBalance.account_id == acct_id,
+                        AccountBalance.as_of_dt == datetime(2026, 9, 10).date()
+                    )
                 ).all()
                 assert len(remaining) == 0, f"Account {acct_id} balance should be invalidated"
 
@@ -658,8 +687,8 @@ class TestTransactionRoutes:
         )
 
         with app.app_context():
-            remaining = AccountBalance.query.filter_by(
-                account_id=test_account
+            remaining = db.session.scalars(
+                select(AccountBalance).where(AccountBalance.account_id == test_account)
             ).all()
             assert len(remaining) == 0
 

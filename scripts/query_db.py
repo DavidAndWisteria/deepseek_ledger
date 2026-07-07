@@ -15,13 +15,14 @@ from app.models import (
     TransactionStatus, AccountType, CategoryType, UserRole
 )
 from datetime import datetime, timezone, timedelta
+from sqlalchemy import select, text
 
 
 def show_tables():
     """显示所有表名和行数"""
     app = create_app()
     with app.app_context():
-        from sqlalchemy import inspect, text
+        from sqlalchemy import inspect
         inspector = inspect(db.engine)
         tables = inspector.get_table_names()
         
@@ -34,7 +35,7 @@ def show_tables():
         total = 0
         for table in tables:
             result = db.session.execute(text(f"SELECT COUNT(*) FROM [{table}]"))
-            count = result.scalar()
+            count = result.scalar() or 0
             total += count
             print(f"{table:<35} {count:>10}")
         
@@ -65,7 +66,9 @@ def query_table(table_name, limit=50):
         return
     
     with app.app_context():
-        rows = model.query.limit(limit).all()
+        # SQLAlchemy 2.0 风格查询
+        stmt = select(model).limit(limit)
+        rows = db.session.scalars(stmt).all()
         
         print(f"\n{'='*120}")
         print(f"{table_name} (共 {len(rows)} 条, 限制 {limit} 条)")
@@ -112,8 +115,6 @@ def query_sql(sql, limit=100):
     """执行自定义 SQL 查询"""
     app = create_app()
     with app.app_context():
-        from sqlalchemy import text
-        
         try:
             result = db.session.execute(text(sql))
             rows = result.fetchall()
