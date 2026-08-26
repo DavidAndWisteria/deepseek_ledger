@@ -101,6 +101,116 @@ def create_app(test_config=None):
                     db.session.commit()
                     inspector.info_cache.clear()  # 清除缓存以刷新列信息
 
+            # 0.3.8: 统一外汇/单位存储（trans_fx_* → trans_unit / trans_unit_price / trans_unit_name）
+            # 非破坏性迁移：仅补齐缺失列、迁移旧数据，再尝试删除旧列
+            if 'transaction' in existing_tables:
+                existing_cols = {c['name'] for c in inspector.get_columns('transaction')}
+                has_old_fx = 'trans_fx_currency_name' in existing_cols
+                need_migrate = (
+                    has_old_fx or
+                    'trans_unit_name' not in existing_cols or
+                    'trans_unit_is_fx_ind' not in existing_cols
+                )
+                if need_migrate:
+                    # 1) 补齐缺失列（对旧版本数据库安全）
+                    for col, ddl in (
+                        ('trans_unit', 'FLOAT'),
+                        ('trans_unit_price', 'FLOAT'),
+                        ('trans_unit_name', 'VARCHAR(100)'),
+                        ('trans_unit_is_fx_ind', 'BOOLEAN'),
+                        ('trans_is_rhs_currency_ind', 'BOOLEAN'),
+                    ):
+                        if col not in existing_cols:
+                            db.session.execute(db.text(
+                                f'ALTER TABLE "transaction" ADD COLUMN "{col}" {ddl}'
+                            ))
+                    # 2) 迁移旧 trans_fx_* 数据到统一字段
+                    if has_old_fx:
+                        db.session.execute(db.text(
+                            "UPDATE \"transaction\" SET "
+                            "trans_unit = CASE WHEN trans_fx_amount IS NOT NULL THEN trans_fx_amount ELSE trans_unit END, "
+                            "trans_unit_price = CASE WHEN trans_fx_amount IS NOT NULL THEN trans_fx_rate ELSE trans_unit_price END, "
+                            "trans_unit_name = trans_fx_currency_name, "
+                            "trans_unit_is_fx_ind = CASE WHEN trans_fx_currency_name IS NOT NULL THEN 1 ELSE COALESCE(trans_unit_is_fx_ind, 0) END, "
+                            "trans_is_rhs_currency_ind = CASE WHEN trans_fx_currency_name IS NOT NULL THEN 1 ELSE trans_is_rhs_currency_ind END"
+                        ))
+                        # 3) 尽量删除旧列（SQLite 3.35+ 支持）
+                        for col in ('trans_fx_currency_name', 'trans_fx_amount', 'trans_fx_rate'):
+                            try:
+                                db.session.execute(db.text(
+                                    f'ALTER TABLE "transaction" DROP COLUMN "{col}"'
+                                ))
+                            except Exception:
+                                pass  # 旧版 SQLite 不支持 DROP COLUMN 时保留旧列
+                    db.session.commit()
+                    inspector.info_cache.clear()  # 清除缓存以刷新列信息
+
+            # 0.3.9: 拆分外汇/投资单位存储（外汇用 trans_fx_*，投资单位用 trans_unit_*，移除 trans_unit_is_fx_ind）
+            # 非破坏性迁移：仅补齐缺失列、回迁外汇数据，再尝试删除标记列
+            if 'transaction' in existing_tables:
+                tx_cols = {c['name'] for c in inspector.get_columns('transaction')}
+                need_fx_split = (
+                    'trans_fx_currency_name' not in tx_cols or
+                    'trans_fx_rate' not in tx_cols or
+                    'trans_fx_amount' not in tx_cols or
+                    'trans_unit_is_fx_ind' in tx_cols
+                )
+                if need_fx_split:
+                    # 1) 补齐外汇字段列
+                    for col, ddl in (
+                        ('trans_fx_currency_name', 'VARCHAR(3)'),
+                        ('trans_fx_rate', 'FLOAT'),
+                        ('trans_fx_amount', 'FLOAT'),
+                    ):
+                        if col not in tx_cols:
+                            db.session.execute(db.text(
+                                f'ALTER TABLE "transaction" ADD COLUMN "{col}" {ddl}'
+                            ))
+                    # 2) 将原标记为外汇的 trans_unit_* 数据回迁到 trans_fx_*
+                    if 'trans_unit_is_fx_ind' in tx_cols:
+                        db.session.execute(db.text(
+                            "UPDATE \"transaction\" SET "
+                            "trans_fx_amount = trans_unit, "
+                            "trans_fx_rate = trans_unit_price, "
+                            "trans_fx_currency_name = trans_unit_name, "
+                            "trans_unit = NULL, "
+                            "trans_unit_price = NULL, "
+                            "trans_unit_name = NULL "
+                            "WHERE trans_unit_is_fx_ind = 1"
+                        ))
+                        # 3) 尽量删除标记列
+                        try:
+                            db.session.execute(db.text(
+                                'ALTER TABLE "transaction" DROP COLUMN "trans_unit_is_fx_ind"'
+                            ))
+                        except Exception:
+                            pass  # 旧版 SQLite 不支持 DROP COLUMN 时保留旧列
+                    db.session.commit()
+                    inspector.info_cache.clear()  # 清除缓存以刷新列信息
+
+            # 0.3.9: 账户增加"单位概念"标记（基金账户默认为 True）
+            if 'account' in existing_tables:
+                acct_cols = {c['name'] for c in inspector.get_columns('account')}
+                if 'account_has_unit_ind' not in acct_cols:
+                    db.session.execute(db.text(
+                        'ALTER TABLE "account" ADD COLUMN "account_has_unit_ind" BOOLEAN NOT NULL DEFAULT 0'
+                    ))
+                    db.session.execute(db.text(
+                        'UPDATE "account" SET "account_has_unit_ind" = 1 WHERE "account_type" = \'FUND\''
+                    ))
+                    db.session.commit()
+                    inspector.info_cache.clear()  # 清除缓存以刷新列信息
+
+            # 0.3.10: 账户增加 ISIN 代码字段（证券/基金唯一标识）
+            if 'account' in existing_tables:
+                acct_cols = {c['name'] for c in inspector.get_columns('account')}
+                if 'account_isin' not in acct_cols:
+                    db.session.execute(db.text(
+                        'ALTER TABLE "account" ADD COLUMN "account_isin" VARCHAR(12)'
+                    ))
+                    db.session.commit()
+                    inspector.info_cache.clear()  # 清除缓存以刷新列信息
+
             # 检查每个模型表的结构
             for table_name, table in metadata.tables.items():
                 if table_name not in existing_tables:
@@ -137,8 +247,8 @@ def create_app(test_config=None):
                                 if filtered_row:
                                     try:
                                         db.session.execute(table.insert().values(**filtered_row))
-                                    except Exception:
-                                        pass
+                                    except Exception as e:
+                                        print(f'[migrate] restore row failed for {table_name}: {e}')
                             db.session.commit()
 
     return app

@@ -46,6 +46,10 @@ CLOSE_DATE_SET_CSV = """账户,id,account_name,account_other_name,account_type,a
 "ClosedAcc",500,"已关闭账户",,"SAVING",2020-01-01,2023-12-31,"某银行","HKD","测试用户"
 """
 
+ISIN_CSV = """账户,id,account_name,account_other_name,account_type,account_create_date,account_close_date,account_custodian,account_currency_name,account_owner,account_isin
+"FundAcc",600,"沪深300ETF",,"FUND",2024-01-01,,"基金公司","HKD","测试用户",hk0000064689
+"""
+
 
 # ===============================================================
 # 辅助函数
@@ -106,6 +110,20 @@ class TestImportAccounts:
             assert acc.account_type == AccountType.SAVING
             assert acc.account_custodian == '众安银行'
             assert acc.account_currency_name == 'HKD'
+
+    def test_import_account_isin(self, app, test_user):
+        """导入账户 ISIN 代码，存储时自动转大写"""
+        with app.app_context():
+            user = db.session.get(User, test_user)
+            service = ImportService(user)
+            result = service.import_accounts_csv(ISIN_CSV)
+            assert result['success'] == 1
+
+            acc = db.session.scalars(
+                select(Account).where(Account.account_name == '沪深300ETF')
+            ).first()
+            assert acc is not None
+            assert acc.account_isin == 'HK0000064689'
 
     def test_import_creates_mappings(self, app, test_user):
         """导入后创建 Bluecoins 映射"""

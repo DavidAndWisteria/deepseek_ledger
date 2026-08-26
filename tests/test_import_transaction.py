@@ -503,6 +503,7 @@ class TestImportTransactionsService:
             assert txn is not None
             assert txn.trans_fx_currency_name == 'USD'
             assert txn.trans_fx_amount == -50
+            assert txn.trans_is_rhs_currency_ind is True
 
     def test_import_fx_no_rate_fallback(self, app, test_user, test_owner):
         """外币交易无汇率时走 fallback"""
@@ -523,6 +524,7 @@ class TestImportTransactionsService:
             assert txn.trans_fx_currency_name == 'USD'
             # 应使用 fallback 汇率
             assert txn.trans_fx_rate == 0.0  # fallback sets stored_rate=0.0
+            assert txn.trans_is_rhs_currency_ind is True
 
     def test_transaction_status_default_unverified(self, app, test_user, test_owner):
         """导入的交易状态默认为 UNVERIFIED"""

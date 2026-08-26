@@ -8,7 +8,7 @@ from urllib.error import URLError
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
-from sqlalchemy import CursorResult, nullsfirst, case, func, select, delete, update
+from sqlalchemy import CursorResult, nullsfirst, case, func, select, delete, update, or_
 from app import db
 from app.models import (Account, AccountType, Owner, BluecoinsAccountMapping,
                         Transaction, TransactionStatus, AccountBalance, CurrencyConversion)
@@ -63,29 +63,34 @@ def get_account_eod_balance(account_id, as_of_date):
     has_fx = False
 
     if account and account.account_currency_name != 'HKD':
-        # 获取外币交易记录
+        # 获取外币账户的单位交易（外汇用 trans_fx_*，投资单位用 trans_unit_*）
         fx_stmt = select(Transaction).where(
             Transaction.trans_account_id == account_id,
             Transaction.trans_datetime <= day_end,
-            Transaction.trans_fx_currency_name.isnot(None)
+            or_(Transaction.trans_fx_currency_name.isnot(None), Transaction.trans_unit.isnot(None))
         )
         fx_transactions = db.session.execute(fx_stmt).scalars().all()
 
         for t in fx_transactions:
             has_fx = True
-            fx_amt = t.trans_fx_amount or 0.0
-            fx_rate = t.trans_fx_rate or 0.0
-            fx_balance += fx_amt
-            if t.trans_unit is not None and t.trans_unit_price is not None:
-                unit_price_val = t.trans_unit_price
-                if unit_price_val > 0:
-                    fx_cost_numerator += abs(t.trans_unit) * unit_price_val
-                    fx_cost_denominator += abs(t.trans_unit)
-                    deposit_units += t.trans_unit
-            elif fx_rate > 0:
-                fx_cost_numerator += fx_amt / fx_rate
-                fx_cost_denominator += fx_amt
-                deposit_units += fx_amt
+            if t.is_fx:
+                # 外汇：trans_fx_amount=外汇金额，trans_fx_rate=汇率
+                fx_amt = t.trans_fx_amount or 0.0
+                fx_rate = t.trans_fx_rate or 0.0
+                fx_balance += fx_amt
+                if fx_rate > 0:
+                    fx_cost_numerator += fx_amt / fx_rate
+                    fx_cost_denominator += fx_amt
+                    deposit_units += fx_amt
+            else:
+                # 投资单位（外币基金）：trans_unit=份额，trans_unit_price=账户货币单价
+                shares = t.trans_unit or 0.0
+                price = t.trans_unit_price or 0.0
+                fx_balance += shares * price
+                deposit_units += shares
+                if price > 0 and shares != 0:
+                    fx_cost_numerator += t.trans_amount or 0.0
+                    fx_cost_denominator += shares
 
     fx_cost_rate = (fx_cost_numerator / fx_cost_denominator) if fx_cost_denominator != 0 else None
     acct_fx_currency = account.account_currency_name if (has_fx and account) else None
@@ -458,6 +463,8 @@ def add_account():
             return redirect(url_for('accounts.list_accounts'))
 
     # 创建账户
+    has_unit_ind = (request.form.get('account_has_unit_ind', '0') == '1') or account_type == 'FUND'
+    account_isin = (request.form.get('account_isin', '') or '').strip().upper() or None
     account = Account(
         account_name=account_name,
         account_other_name=account_other_name if account_other_name else None,
@@ -466,7 +473,9 @@ def add_account():
         account_close_date=close_date,
         account_custodian=account_custodian,
         account_currency_name=currency,
-        account_owner_id=owner_id
+        account_owner_id=owner_id,
+        account_has_unit_ind=has_unit_ind,
+        account_isin=account_isin
     )
     db.session.add(account)
     db.session.commit()
@@ -496,6 +505,8 @@ def edit_account(account_id):
     account.account_name = request.form.get('account_name', account.account_name).strip()
     account.account_other_name = request.form.get('account_other_name', '').strip() or None
     account.account_custodian = request.form.get('account_custodian', account.account_custodian).strip()
+    account.account_has_unit_ind = request.form.get('account_has_unit_ind', '0') == '1'
+    account.account_isin = (request.form.get('account_isin', '') or '').strip().upper() or None
 
     # 更新创建日期
     create_date_str = request.form.get('account_create_date', '')

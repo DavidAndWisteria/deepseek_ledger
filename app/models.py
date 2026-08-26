@@ -165,6 +165,15 @@ class Account(Base):
     account_custodian: Mapped[str] = mapped_column(String(100), nullable=False)
     account_currency_name: Mapped[str] = mapped_column(String(3), default='HKD', nullable=False)
     account_owner_id: Mapped[int] = mapped_column(Integer, ForeignKey('owner.owner_id'), nullable=False)
+    # 是否有单位概念（如基金份额）；基金账户默认为 True
+    account_has_unit_ind: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 证券/基金 ISIN 代码（12 位，如 HK0000064689）；基金等有价证券账户使用
+    account_isin: Mapped[str | None] = mapped_column(String(12), nullable=True)
+
+    @property
+    def has_unit_concept(self):
+        """账户是否按单位/单价记录交易"""
+        return self.account_has_unit_ind
 
     # 关系
     owner: Mapped[Owner] = relationship(back_populates='accounts')
@@ -240,15 +249,17 @@ class Transaction(Base):
     # 转账配对
     trans_counter_id: Mapped[int | None] = mapped_column(Integer, ForeignKey('transaction.trans_id'), nullable=True)
 
-    # 外汇相关 (MVP阶段预留)
+    # 外汇交易：trans_fx_currency_name=外汇货币，trans_fx_rate=汇率（1 HKD = X trans_fx_currency_name），trans_fx_amount=外汇金额
     trans_fx_currency_name: Mapped[str | None] = mapped_column(String(3), nullable=True)
-    trans_fx_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     trans_fx_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trans_fx_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # trans_fx_currency_name 为外汇货币时，trans_is_rhs_currency_ind 必填：trans_currency_name 是否为汇率对的 RHS（如 USD/HKD 的 HKD）
     trans_is_rhs_currency_ind: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
-    # 单位 / 单价（基金、外币账户持仓追踪）
+    # 投资单位（基金等）：trans_unit=份额，trans_unit_price=单价，trans_unit_name=单位名称
     trans_unit: Mapped[float | None] = mapped_column(Float, nullable=True)
     trans_unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trans_unit_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # 存款关联 (MVP阶段预留)
     trans_deposit_id: Mapped[int | None] = mapped_column(Integer, ForeignKey('time_deposit.deposit_id'), nullable=True)
@@ -276,6 +287,11 @@ class Transaction(Base):
     def is_transfer(self):
         """判断是否为转账交易"""
         return self.trans_counter_id is not None
+
+    @property
+    def is_fx(self):
+        """判断是否为外汇交易"""
+        return self.trans_fx_currency_name is not None
 
     def is_income(self):
         """判断是否为收入"""

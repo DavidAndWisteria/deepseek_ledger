@@ -227,6 +227,7 @@ class ImportService:
         account_custodian = row.get('account_custodian', '').strip()
         account_currency = row.get('account_currency_name', 'HKD').strip()
         owner_name = row.get('account_owner', '').strip()
+        account_isin = row.get('account_isin', '').strip().upper() or None
         
         create_date = self._parse_date(row.get('account_create_date', ''))
         if create_date is None:
@@ -272,7 +273,8 @@ class ImportService:
             account_close_date=close_date,
             account_custodian=account_custodian,
             account_currency_name=account_currency,
-            account_owner_id=owner.owner_id
+            account_owner_id=owner.owner_id,
+            account_isin=account_isin
         )
         db.session.add(account)
         db.session.flush()
@@ -623,7 +625,9 @@ class ImportService:
             'trans_status': trans_status
         }
 
-        if currency != 'HKD' and bc_type != '转账':
+        is_fx = currency != 'HKD' and bc_type != '转账'
+
+        if is_fx:
             file_rate_str = row.get('汇率', '').strip()
             try:
                 file_rate = float(file_rate_str) if file_rate_str else 0.0
@@ -642,9 +646,10 @@ class ImportService:
             kwargs.update({
                 'trans_amount': hkd_amount,
                 'trans_currency_name': 'HKD',
-                'trans_fx_currency_name': currency,
                 'trans_fx_amount': amount,
                 'trans_fx_rate': stored_rate,
+                'trans_fx_currency_name': currency,
+                'trans_is_rhs_currency_ind': True,
             })
         else:
             kwargs.update({
@@ -655,7 +660,7 @@ class ImportService:
         # Read optional unit columns from CSV
         unit_str = row.get('unit', '').strip() or row.get('单位', '').strip()
         unit_price_str = row.get('unit_price', '').strip() or row.get('单位单价', '').strip()
-        if unit_str or unit_price_str:
+        if not is_fx and (unit_str or unit_price_str):
             try:
                 unit_val = float(unit_str) if unit_str else None
                 unit_price_val = float(unit_price_str) if unit_price_str else None
@@ -668,6 +673,7 @@ class ImportService:
                 if unit_val is not None and unit_price_val is not None:
                     kwargs['trans_unit'] = unit_val if kwargs['trans_amount'] > 0 else -unit_val
                     kwargs['trans_unit_price'] = unit_price_val
+                    kwargs['trans_unit_name'] = None
             except ValueError as e:
                 self.results['transactions']['details'].append({
                     'row': index + 1, 'status': 'failed', 'reason': str(e)

@@ -101,6 +101,8 @@
 | account_custodian | VARCHAR(100) | NOT NULL | 机构/钱包 |
 | account_currency_name | CHAR(3) | DEFAULT 'HKD' | 货币代码 |
 | account_owner_id | INTEGER | FOREIGN KEY → owner.owner_id, NOT NULL | 账户拥有者 |
+| account_has_unit_ind | BOOLEAN | DEFAULT FALSE | 是否有单位概念（按单位/单价记账，如基金份额）；基金账户默认为 True |
+| account_isin | VARCHAR(12) | NULLABLE | 证券/基金 ISIN 代码（12 位，如 HK0000064689）；基金等有价证券账户使用 |
 
 **账户类型枚举 (AccountType)**：
 
@@ -158,10 +160,13 @@
 | trans_owner_id | INTEGER | FOREIGN KEY → owner.owner_id, NOT NULL | 交易所有者 |
 | trans_counter_id | INTEGER | FOREIGN KEY → transaction.trans_id, NULLABLE | 配对交易ID（转账用） |
 | trans_status | ENUM | NOT NULL, DEFAULT 'UNVERIFIED' | 交易状态 |
-| trans_fx_currency_name | CHAR(3) | NULLABLE | 外汇货币（预留） |
-| trans_fx_amount | FLOAT | NULLABLE | 外汇金额（预留） |
-| trans_fx_rate | FLOAT | NULLABLE | 外汇汇率（预留） |
-| trans_is_rhs_currency_ind | BOOLEAN | NULLABLE | 是否RHS货币（预留） |
+| trans_fx_currency_name | CHAR(3) | NULLABLE | 外汇货币代码（如 USD），非空即为外汇交易 |
+| trans_fx_rate | FLOAT | NULLABLE | 外汇汇率（1 HKD = X trans_fx_currency_name） |
+| trans_fx_amount | FLOAT | NULLABLE | 外汇金额（带符号） |
+| trans_is_rhs_currency_ind | BOOLEAN | NULLABLE | 外汇交易时必填：trans_currency_name 是否为汇率对 RHS（如 USD/HKD 的 HKD） |
+| trans_unit | FLOAT | NULLABLE | 投资单位数（如基金份额，仅单位概念账户） |
+| trans_unit_price | FLOAT | NULLABLE | 投资单位单价（账户默认货币计） |
+| trans_unit_name | VARCHAR(100) | NULLABLE | 投资单位名称（预留） |
 | trans_deposit_id | INTEGER | FOREIGN KEY → time_deposit.deposit_id, NULLABLE | 关联存款（预留） |
 
 **交易状态枚举 (TransactionStatus)**：

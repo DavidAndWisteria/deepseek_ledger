@@ -470,11 +470,17 @@
                 </div>
                 <div class="form-group" style="flex: 1;">
                     <label for="account_type">账户类型 *</label>
-                    <select id="account_type" name="account_type" required>
+                    <select id="account_type" name="account_type" required onchange="syncUnitConceptDefault()">
                         {% for type in account_types %}
                         <option value="{{ type.name }}">{{ type.value }}</option>
                         {% endfor %}
                     </select>
+                </div>
+                <div class="form-group" style="flex: 1; display: flex; align-items: flex-end; padding-bottom: 4px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="account_has_unit_ind" name="account_has_unit_ind" value="1">
+                        有单位概念<span style="font-weight: normal; color: #999;">(按单位/单价记账，如基金份额)</span>
+                    </label>
                 </div>
             </div>
             
@@ -512,6 +518,13 @@
                     <label for="account_other_name">别名</label>
                     <input type="text" id="account_other_name" name="account_other_name" 
                            placeholder="可选别名">
+                </div>
+                <div class="form-group" id="isin-group" style="flex: 1; display: none;">
+                    <label for="account_isin">ISIN 代码</label>
+                    <input type="text" id="account_isin" name="account_isin" 
+                           placeholder="例如：HK0000064689" maxlength="12" 
+                           style="text-transform: uppercase;">
+                    <small style="color: #aaa;">基金等有价证券的唯一标识（可选）</small>
                 </div>
             </div>
             
@@ -555,7 +568,11 @@
                 <tbody>
                     {% for account in accounts %}
                     <tr>
-                        <td>{{ account.account_type.value }}</td>
+                        <td>{{ account.account_type.value }}
+                            {% if account.account_has_unit_ind %}
+                            <span class="badge" style="background: #d5f5e3; color: #27ae60;" title="按单位/单价记账">单位</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {{ account.owner.owner_name }}
                             {% if not account.owner.user %}
@@ -566,7 +583,11 @@
                         </td>
                         <td>{{ account.account_custodian }}</td>
                         <td>{{ account.account_currency_name }}</td>
-                        <td><strong>{{ account.account_name }}</strong></td>
+                        <td><strong>{{ account.account_name }}</strong>
+                            {% if account.account_isin %}
+                            <div style="font-size: 11px; color: #888; font-family: monospace;">{{ account.account_isin }}</div>
+                            {% endif %}
+                        </td>
                         <td>{{ account.account_other_name or '-' }}</td>
                         <td>{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '-' }}</td>
                         <td>{{ account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '-' }}</td>
@@ -586,6 +607,8 @@
                                     data-createdate="{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '' }}"
                                     data-closedate="{{ account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '' }}"
                                     data-ownerid="{{ account.account_owner_id }}"
+                                    data-hasunit="{{ account.account_has_unit_ind }}"
+                                    data-isin="{{ account.account_isin or '' }}"
                                     class="btn btn-secondary btn-sm">✏️ 编辑</button>
                             <button onclick="confirmDeleteAccount({{ account.account_id }})" 
                                     class="btn btn-danger btn-sm">🗑 删除</button>
@@ -624,6 +647,19 @@
                 <div class="form-group">
                     <label>机构/钱包</label>
                     <input type="text" id="edit-custodian" name="account_custodian" required>
+                </div>
+                
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="edit-has-unit-ind" name="account_has_unit_ind" value="1">
+                        有单位概念<span style="font-weight: normal; color: #999;">(按单位/单价记账，如基金份额)</span>
+                    </label>
+                </div>
+                
+                <div class="form-group">
+                    <label>ISIN 代码</label>
+                    <input type="text" id="edit-isin" name="account_isin" maxlength="12" style="text-transform: uppercase;" placeholder="例如：HK0000064689">
+                    <small style="color: #aaa;">基金等有价证券的唯一标识（可选）</small>
                 </div>
                 
                 <div class="form-row">
@@ -714,6 +750,19 @@
         window.history.replaceState({}, '', url);
     }
 
+    function syncUnitConceptDefault() {
+        const typeSelect = document.getElementById('account_type');
+        const hasUnitCheckbox = document.getElementById('account_has_unit_ind');
+        if (typeSelect.value === 'FUND') {
+            hasUnitCheckbox.checked = true;
+        }
+        const isinGroup = document.getElementById('isin-group');
+        if (isinGroup) {
+            isinGroup.style.display = typeSelect.value === 'FUND' ? '' : 'none';
+        }
+    }
+    syncUnitConceptDefault();
+
     function openEditModal(btn) {
         const id = btn.dataset.id;
         document.getElementById('edit-form').action = '/accounts/' + id + '/edit';
@@ -722,6 +771,8 @@
         document.getElementById('edit-custodian').value = btn.dataset.custodian;
         document.getElementById('edit-create-date').value = btn.dataset.createdate;
         document.getElementById('edit-close-date').value = btn.dataset.closedate;
+        document.getElementById('edit-has-unit-ind').checked = btn.dataset.hasunit === 'True';
+        document.getElementById('edit-isin').value = btn.dataset.isin;
         
         const ownerSelect = document.getElementById('edit-owner-id');
         if (ownerSelect) {

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from unittest.mock import patch
 import pytest
 from app import db
 from app.models import (
@@ -741,3 +742,121 @@ class TestTransactionRoutes:
             assert db.session.get(Transaction, my_id) is None
             other = db.session.get(Transaction, other_id)
             assert other is not None
+
+
+class TestFundTransactionRoutes:
+    """基金交易路由测试（含外币基金户口）"""
+
+    def _create_fund_account(self, app, test_owner, currency):
+        with app.app_context():
+            account = Account(
+                account_name=f'{currency}基金',
+                account_type=AccountType.FUND,
+                account_custodian='银行',
+                account_currency_name=currency,
+                account_owner_id=test_owner,
+                account_has_unit_ind=True
+            )
+            db.session.add(account)
+            db.session.commit()
+            return account.account_id
+
+    def test_add_hkd_fund_expense(self, logged_in_client, app, test_owner, test_category):
+        """HKD 基金户口买入：单位=份额，单价=HKD"""
+        fund_id = self._create_fund_account(app, test_owner, 'HKD')
+        response = logged_in_client.post('/add', data={
+            'trans_type': 'expense',
+            'account_id': fund_id,
+            'category_id': test_category,
+            'currency': 'HKD',
+            'amount': '1000.00',
+            'unit': '50',
+            'unit_price': '20',
+            'trans_date': '2026-06-19',
+            'trans_time': '12:00',
+            'description': '买入HKD基金'
+        }, follow_redirects=True)
+        assert response.status_code == 200
+
+        with app.app_context():
+            t = db.session.scalars(
+                select(Transaction).where(Transaction.trans_desc == '买入HKD基金')
+            ).first()
+            assert t is not None
+            assert t.trans_amount == -1000.00
+            assert t.trans_unit == -50
+            assert t.trans_unit_price == 20
+            assert t.trans_unit_name is None
+            assert t.is_fx is False
+
+    def test_add_usd_fund_expense(self, logged_in_client, app, test_owner, test_category):
+        """USD 基金户口买入：单价为 USD，金额按汇率换算 HKD"""
+        fund_id = self._create_fund_account(app, test_owner, 'USD')
+        with patch('app.routes.transactions.get_fx_rate_to_hkd', return_value=7.87):
+            response = logged_in_client.post('/add', data={
+                'trans_type': 'expense',
+                'account_id': fund_id,
+                'category_id': test_category,
+                'currency': 'USD',
+                'amount': '1050.00',
+                'unit': '100',
+                'unit_price': '10.5',
+                'fx_rate': '0.127',
+                'trans_date': '2026-06-19',
+                'trans_time': '12:00',
+                'description': '买入USD基金'
+            }, follow_redirects=True)
+        assert response.status_code == 200
+
+        with app.app_context():
+            t = db.session.scalars(
+                select(Transaction).where(Transaction.trans_desc == '买入USD基金')
+            ).first()
+            assert t is not None
+            assert t.trans_unit == -100          # 份额
+            assert t.trans_unit_price == 10.5    # USD 单价
+            assert t.trans_unit_name is None
+            assert t.is_fx is False
+            assert t.trans_currency_name == 'HKD'
+            assert abs(t.trans_amount - (-8267.72)) < 1  # 1050 / 0.127
+
+    def test_add_fund_transfer(self, logged_in_client, app, test_owner, test_category):
+        """基金户口转账：转出记录保存份额与单价"""
+        fund_id = self._create_fund_account(app, test_owner, 'HKD')
+        with app.app_context():
+            account2 = Account(
+                account_name='基金转入',
+                account_type=AccountType.SAVING,
+                account_custodian='银行',
+                account_currency_name='HKD',
+                account_owner_id=test_owner
+            )
+            db.session.add(account2)
+            db.session.commit()
+            to_id = account2.account_id
+
+        response = logged_in_client.post('/add', data={
+            'trans_type': 'transfer',
+            'account_id': fund_id,
+            'to_account_id': to_id,
+            'category_id': test_category,
+            'currency': 'HKD',
+            'to_currency': 'HKD',
+            'amount': '1000.00',
+            'to_amount': '1000.00',
+            'unit': '50',
+            'unit_price': '20',
+            'trans_date': '2026-06-20',
+            'trans_time': '12:00',
+            'description': '基金转账'
+        }, follow_redirects=True)
+        assert response.status_code == 200
+
+        with app.app_context():
+            out = db.session.scalars(
+                select(Transaction).where(Transaction.trans_desc == '转出: 基金转账')
+            ).first()
+            assert out is not None
+            assert out.trans_unit == -50
+            assert out.trans_unit_price == 20
+            assert out.is_fx is False

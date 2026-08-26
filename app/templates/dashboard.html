@@ -128,7 +128,7 @@
                     <select id="account_id" name="account_id" required onchange="onAccountChange()">
                         <option value="">选择账户</option>
                         {% for account in accounts %}
-                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}">
+                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}" data-type="{{ account.account_type.value }}" data-has-unit="{{ account.account_has_unit_ind }}">
                             {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
                         </option>
                         {% endfor %}
@@ -159,7 +159,7 @@
                     <select id="to_account_id" name="to_account_id">
                         <option value="">选择账户</option>
                         {% for account in accounts %}
-                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}">
+                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}" data-type="{{ account.account_type.value }}" data-has-unit="{{ account.account_has_unit_ind }}">
                             {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
                         </option>
                         {% endfor %}
@@ -309,7 +309,7 @@
                         <td style="font-size: 12px;">{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.owner.owner_name }} · {{ t.account_rel.account_name }}</td>
                         <td style="font-size: 12px;">{{ t.category_rel.category_class }} › {{ t.category_rel.category_subclass or '-' }} › {{ t.category_rel.category_name }}</td>
                         <td>
-                            {% if t.trans_fx_currency_name %}
+                            {% if t.is_fx %}
                             <span class="{{ 'text-income' if t.trans_amount > 0 else 'text-expense' }}">
                                 {{ t.trans_fx_currency_name }} {{ t.trans_fx_amount|amt }}
                             </span>
@@ -343,7 +343,7 @@
                         </td>
                         <td style="white-space: nowrap;">
                             <button type="button" class="btn-action" style="background: #d4e6f1; color: #2980b9;"
-                                    onclick="openDetailModal('{{ t.trans_datetime.strftime('%Y-%m-%d %H:%M') }}', '{{ {'I': '收入', 'E': '支出', 'T': '转账'}.get(t.category_rel.category_type.value, '特殊') }}', '{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.owner.owner_name }} · {{ t.account_rel.account_name }}', '{{ t.category_rel.category_class }} › {{ t.category_rel.category_subclass or '-' }} › {{ t.category_rel.category_name }}', '{{ (t.trans_fx_currency_name + " " + (t.trans_fx_amount|amt)) if t.trans_fx_currency_name else (t.trans_currency_name + " " + (t.trans_amount|amt)) }}', `{{ ("HKD " + (t.trans_amount|amt) + (" @ " + (t.trans_fx_rate|amt(4)) if t.trans_fx_rate and t.trans_fx_rate > 0 else "")) if t.trans_fx_currency_name else "" }}`, `{{ t.trans_desc or '' }}`, '{{ t.trans_status.value }}', {{ t.trans_id }}, {{ t.trans_account_id }}, {{ t.trans_category_id }}, {{ (t.trans_fx_amount|abs) if t.trans_fx_currency_name else (t.trans_amount|abs) }}, '{{ t.trans_fx_currency_name or t.trans_currency_name }}')"
+                                    onclick="openDetailModal('{{ t.trans_datetime.strftime('%Y-%m-%d %H:%M') }}', '{{ {'I': '收入', 'E': '支出', 'T': '转账'}.get(t.category_rel.category_type.value, '特殊') }}', '{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.owner.owner_name }} · {{ t.account_rel.account_name }}', '{{ t.category_rel.category_class }} › {{ t.category_rel.category_subclass or '-' }} › {{ t.category_rel.category_name }}', '{{ (t.trans_fx_currency_name + " " + (t.trans_fx_amount|amt)) if t.is_fx else (t.trans_currency_name + " " + (t.trans_amount|amt)) }}', `{{ ("HKD " + (t.trans_amount|amt) + (" @ " + (t.trans_fx_rate|amt(4)) if t.trans_fx_rate and t.trans_fx_rate > 0 else "")) if t.is_fx else "" }}`, `{{ t.trans_desc or '' }}`, '{{ t.trans_status.value }}', {{ t.trans_id }}, {{ t.trans_account_id }}, {{ t.trans_category_id }}, {{ (t.trans_fx_amount|abs) if t.is_fx else (t.trans_amount|abs) }}, '{{ t.trans_fx_currency_name or t.trans_currency_name }}', {{ t.trans_unit|abs if t.trans_unit is not none else 0 }}, {{ t.trans_unit_price if t.trans_unit_price is not none else 0 }})"
                                     title="查看详情">📋</button>
                             
                             {% if t.trans_status.value == 'UNVERIFIED' %}
@@ -416,10 +416,10 @@
             
             <div class="form-group">
                 <label>账户 *</label>
-                <select id="edit_account_id" name="account_id" required>
+                <select id="edit_account_id" name="account_id" required onchange="toggleEditUnitGroup()">
                     <option value="">选择账户</option>
                         {% for account in accounts %}
-                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}" data-type="{{ account.account_type.value }}">
+                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}" data-type="{{ account.account_type.value }}" data-has-unit="{{ account.account_has_unit_ind }}">
                             {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
                         </option>
                         {% endfor %}
@@ -441,11 +441,11 @@
             <div class="form-row">
                 <div class="form-group" style="flex: 1;">
                     <label>金额 *</label>
-                    <input type="number" id="edit_amount" name="amount" step="0.01" min="0.01" required>
+                    <input type="number" id="edit_amount" name="amount" step="0.01" min="0.01" required oninput="editAmountChange()">
                 </div>
                 <div class="form-group" style="flex: 1; max-width: 110px;">
                     <label>货币</label>
-                    <select id="edit_currency" name="currency">
+                    <select id="edit_currency" name="currency" onchange="toggleEditUnitGroup()">
                         <option value="HKD">HKD</option>
                         <option value="USD">USD</option>
                         <option value="CNY">CNY</option>
@@ -455,6 +455,17 @@
                         <option value="AUD">AUD</option>
                         <option value="SGD">SGD</option>
                     </select>
+                </div>
+            </div>
+            
+            <div class="form-row" id="edit-unit-group" style="display: none;">
+                <div class="form-group" style="flex: 1;">
+                    <label for="edit_unit">单位 <span style="font-weight: normal; color: #999;">(可选)</span></label>
+                    <input type="number" id="edit_unit" name="unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="editUnitChange()">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label for="edit_unit_price">单位单价 <span style="font-weight: normal; color: #999;">(可选)</span></label>
+                    <input type="number" id="edit_unit_price" name="unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="editUnitPriceChange()">
                 </div>
             </div>
             
@@ -628,17 +639,23 @@
     function toggleUnitGroup() {
         const accountSelect = document.getElementById('account_id');
         const accountOption = accountSelect.options[accountSelect.selectedIndex];
-        const accType = accountOption ? accountOption.getAttribute('data-type') : '';
+        const hasUnit = accountOption ? accountOption.getAttribute('data-has-unit') === 'True' : false;
         const currency = document.getElementById('currency').value;
         const unitGroup = document.getElementById('unit-group');
 
-        if (accType === 'FUND' || currency !== 'HKD') {
+        if (hasUnit || currency !== 'HKD') {
             unitGroup.style.display = '';
         } else {
             unitGroup.style.display = 'none';
             document.getElementById('unit').value = '';
             document.getElementById('unit_price').value = '';
         }
+    }
+
+    function _isFundAccount() {
+        const accountSelect = document.getElementById('account_id');
+        const accountOption = accountSelect.options[accountSelect.selectedIndex];
+        return !!(accountOption && accountOption.getAttribute('data-has-unit') === 'True');
     }
 
     function _hkdAmountFromForm() {
@@ -661,9 +678,9 @@
         var unit = parseFloat(unitEl.value) || 0;
         var unitPrice = parseFloat(unitPriceEl.value) || 0;
         if (unit > 0 && unitPrice > 0 && amt > 0) {
-            var expectedHkd = Math.round(unit * unitPrice * 100) / 100;
-            var actualHkd = _hkdAmountFromForm();
-            if (Math.abs(actualHkd - expectedHkd) > 0.02) {
+            var expected = Math.round(unit * unitPrice * 100) / 100;
+            var actual = _isFundAccount() ? amt : _hkdAmountFromForm();
+            if (Math.abs(actual - expected) > 0.02) {
                 unitEl.style.borderColor = '#e74c3c';
                 unitPriceEl.style.borderColor = '#e74c3c';
                 return false;
@@ -681,6 +698,7 @@
         var unitPriceEl = document.getElementById('unit_price');
         var amountEl = document.getElementById('amount');
         var currency = document.getElementById('currency').value;
+        var isFund = _isFundAccount();
         var amt = parseFloat(amountEl.value) || 0;
         var unit = parseFloat(unitEl.value) || 0;
         var unitPrice = parseFloat(unitPriceEl.value) || 0;
@@ -692,7 +710,16 @@
         }
 
         if (filled === 2) {
-            if (amt <= 0 && unit > 0 && unitPrice > 0) {
+            if (isFund) {
+                // 基金：单位×单价 = 账户默认货币金额
+                if (amt <= 0 && unit > 0 && unitPrice > 0) {
+                    amountEl.value = (unit * unitPrice).toFixed(2);
+                } else if (unit <= 0 && amt > 0 && unitPrice > 0) {
+                    unitEl.value = (amt / unitPrice).toFixed(6);
+                } else if (unitPrice <= 0 && amt > 0 && unit > 0) {
+                    unitPriceEl.value = (amt / unit).toFixed(6);
+                }
+            } else if (amt <= 0 && unit > 0 && unitPrice > 0) {
                 var hkdVal = unit * unitPrice;
                 if (currency === 'HKD') {
                     amountEl.value = hkdVal.toFixed(2);
@@ -767,7 +794,7 @@
         }
     }
     
-     function openDetailModal(datetime, type, account, category, amount, fxInfo, desc, status, transId, accountId, categoryId, absAmount, currency) {
+     function openDetailModal(datetime, type, account, category, amount, fxInfo, desc, status, transId, accountId, categoryId, absAmount, currency, unit, unitPrice) {
         currentDetailTransId = transId;
 
         editData = {
@@ -777,7 +804,9 @@
             amount: absAmount,
             currency: currency,
             datetime: datetime,
-            desc: desc
+            desc: desc,
+            unit: unit,
+            unitPrice: unitPrice
         };
 
         const statusMap = {
@@ -859,8 +888,50 @@
         document.getElementById('edit_trans_time').value = (parts[1] && parts[1].length >= 5) ? parts[1].substring(0, 5) : '00:00';
         document.getElementById('edit_description').value = editData.desc || '';
 
+        document.getElementById('edit_unit').value = editData.unit || '';
+        document.getElementById('edit_unit_price').value = editData.unitPrice || '';
+        toggleEditUnitGroup();
+
         document.getElementById('detail-modal').style.display = 'none';
         document.getElementById('edit-modal').style.display = 'flex';
+    }
+
+    function toggleEditUnitGroup() {
+        var accountSelect = document.getElementById('edit_account_id');
+        var accountOption = accountSelect.options[accountSelect.selectedIndex];
+        var hasUnit = accountOption ? accountOption.getAttribute('data-has-unit') === 'True' : false;
+        var unitGroup = document.getElementById('edit-unit-group');
+        unitGroup.style.display = hasUnit ? '' : 'none';
+    }
+
+    function editAmountChange() {
+        var unitEl = document.getElementById('edit_unit');
+        var unitPriceEl = document.getElementById('edit_unit_price');
+        var amt = parseFloat(document.getElementById('edit_amount').value) || 0;
+        var unitPrice = parseFloat(unitPriceEl.value) || 0;
+        if (amt > 0 && unitPrice > 0) {
+            unitEl.value = (amt / unitPrice).toFixed(6);
+        }
+    }
+
+    function editUnitChange() {
+        var amountEl = document.getElementById('edit_amount');
+        var unitPriceEl = document.getElementById('edit_unit_price');
+        var unit = parseFloat(document.getElementById('edit_unit').value) || 0;
+        var unitPrice = parseFloat(unitPriceEl.value) || 0;
+        if (unit > 0 && unitPrice > 0) {
+            amountEl.value = (unit * unitPrice).toFixed(2);
+        }
+    }
+
+    function editUnitPriceChange() {
+        var amountEl = document.getElementById('edit_amount');
+        var unitEl = document.getElementById('edit_unit');
+        var unit = parseFloat(unitEl.value) || 0;
+        var unitPrice = parseFloat(document.getElementById('edit_unit_price').value) || 0;
+        if (unit > 0 && unitPrice > 0) {
+            amountEl.value = (unit * unitPrice).toFixed(2);
+        }
     }
 
     function closeEditModal() {
