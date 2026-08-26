@@ -218,19 +218,20 @@ UNVERIFIED ──核对──→ VERIFIED
 
 ---
 
-### 8. TimeDeposit（定期存款表）⏳ 预留
+### 8. TimeDeposit（定期存款/货币联系存款表）
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | deposit_id | INTEGER | PRIMARY KEY AUTOINCREMENT | 存款唯一标识 |
 | status | ENUM | DEFAULT 'IN_PROGRESS' | 状态：IN_PROGRESS/MATURED |
-| deposit_currency_name | CHAR(3) | NOT NULL | 存款货币 |
-| amount | FLOAT | NOT NULL | 存款金额 |
+| account_id | INTEGER | FOREIGN KEY → account.account_id, NULLABLE | 存款账户 |
+| deposit_currency_name | CHAR(3) | NOT NULL | 存款货币（CLD 为方向货币） |
+| amount | FLOAT | NOT NULL | 存款金额（CLD 为方向货币金额） |
 | interest_rate | FLOAT | NOT NULL | 利率(%) |
 | subscription_date | DATE | NOT NULL | 认购日期 |
 | maturity_date | DATE | NOT NULL | 到期日期 |
-| realized_pnl | FLOAT | NULLABLE | 实现盈亏 |
-| matured_amount | FLOAT | NULLABLE | 到期金额 |
+| realized_pnl | FLOAT | NULLABLE | 实现盈亏（到期时填写，仅 HKD 基础货币到期适用） |
+| matured_amount | FLOAT | NULLABLE | 到期金额（到期时填写） |
 | matured_currency_name | CHAR(3) | NULLABLE | 到期货币（CLD用） |
 | linked_currency_name | CHAR(3) | NULLABLE | 挂钩货币（CLD用） |
 | linked_currency_amount | FLOAT | NULLABLE | 挂钩货币金额（CLD用） |
@@ -239,7 +240,8 @@ UNVERIFIED ──核对──→ VERIFIED
 | cost_per_unit | FLOAT | NULLABLE | 单位成本（CLD用） |
 | fx_value_per_unit | FLOAT | NULLABLE | 单位外汇价值（CLD用） |
 
-**说明**：当前版本预留，后续版本实现定期存款和货币挂钩存款管理。
+**说明**：开立定存/CLD（转账到 TIME_DEPOSIT / CURRENCY_LINKED_DEPOSIT 账户）后由弹窗录入，
+到期（转账自存款账户）时选择未到期记录完成到期登记。关联交易通过 `transaction.trans_deposit_id` 记录。
 
 ---
 

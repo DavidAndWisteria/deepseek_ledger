@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 style="margin-bottom: 24px; color: #1a1a2e;">🏦 定期存款 / 货币联系存款</h1>
+
+<div class="card">
+    <h3>📋 存款列表 ({{ deposits|length }})</h3>
+    {% if deposits %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>账户</th>
+                    <th>状态</th>
+                    <th>货币</th>
+                    <th>本金</th>
+                    <th>年利率</th>
+                    <th>开立日期</th>
+                    <th>到期日期</th>
+                    <th>到期收回</th>
+                    <th>已实现收益</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in deposits %}
+                <tr>
+                    <td>{{ d.deposit_id }}</td>
+                    <td style="font-size: 12px;">
+                        {% if d.account %}
+                        {{ d.account.account_type.value }} · {{ d.account.account_custodian }} · {{ d.account.account_name }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if d.status.value == 'MATURED' %}
+                        <span class="badge" style="background: #d4e6f1; color: #2980b9;">已到期</span>
+                        {% else %}
+                        <span class="badge" style="background: #d5f5e3; color: #27ae60;">进行中</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ d.deposit_currency_name }}</td>
+                    <td>{{ d.amount|amt }}</td>
+                    <td>{{ d.interest_rate|amt(2) if d.interest_rate is not none else '-' }}%</td>
+                    <td>{{ d.subscription_date.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ d.maturity_date.strftime('%Y-%m-%d') }}</td>
+                    <td>
+                        {% if d.matured_amount is not none %}
+                        {{ d.matured_currency_name or d.deposit_currency_name }} {{ d.matured_amount|amt }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if d.realized_pnl is not none %}
+                        <span class="{{ 'text-income' if d.realized_pnl >= 0 else 'text-expense' }}">{{ d.realized_pnl|amt }}</span>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 40px; color: #999;">
+        <p style="font-size: 48px;">🏦</p>
+        <p>暂无定期存款记录。通过「转账」把资金转入定期存款/货币联系存款账户后即可记录。</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

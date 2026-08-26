@@ -364,6 +364,7 @@
             <a href="{{ url_for('transactions.dashboard', **nav_params) }}" class="brand">💰 财务管家</a>
             <a href="{{ url_for('transactions.dashboard', **nav_params) }}" class="{{ 'active' if request.endpoint == 'transactions.dashboard' }}">📊 仪表盘</a>
             <a href="{{ url_for('accounts.list_accounts', **nav_params) }}" class="{{ 'active' if request.endpoint and 'accounts' in request.endpoint }}">🏦 账户概览</a>
+            <a href="{{ url_for('deposits.list_deposits') }}" class="{{ 'active' if request.endpoint and 'deposits' in request.endpoint }}">💎 定期存款</a>
             <a href="{{ url_for('categories.list_categories') }}" class="{{ 'active' if request.endpoint and 'categories' in request.endpoint }}">📂 分类管理</a>
         </div>
                 <div class="nav-right">

@@ -182,6 +182,7 @@ class Account(Base):
         foreign_keys='Transaction.trans_account_id'
     )
     balances: Mapped[list[AccountBalance]] = relationship('AccountBalance', back_populates='account', lazy='dynamic')
+    time_deposits: Mapped[list[TimeDeposit]] = relationship('TimeDeposit', back_populates='account', lazy='dynamic')
     bluecoins_mappings: Mapped[list[BluecoinsAccountMapping]] = relationship(
         'BluecoinsAccountMapping', back_populates='account', lazy='dynamic'
     )
@@ -339,6 +340,7 @@ class TimeDeposit(Base):
 
     deposit_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     status: Mapped[DepositStatus] = mapped_column(SAEnum(DepositStatus), default=DepositStatus.IN_PROGRESS, nullable=False)
+    account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey('account.account_id'), nullable=True)
     deposit_currency_name: Mapped[str] = mapped_column(String(3), nullable=False)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     interest_rate: Mapped[float] = mapped_column(Float, nullable=False)
@@ -357,6 +359,7 @@ class TimeDeposit(Base):
     fx_value_per_unit: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # 关系
+    account: Mapped[Account | None] = relationship(back_populates='time_deposits')
     transactions: Mapped[list[Transaction]] = relationship('Transaction', back_populates='deposit', lazy='dynamic')
 
     def __repr__(self):

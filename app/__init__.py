@@ -78,6 +78,9 @@ def create_app(test_config=None):
     from app.routes.data_manager import data_manager as data_manager_blueprint
     app.register_blueprint(data_manager_blueprint)
 
+    from app.routes.deposits import deposits as deposits_blueprint
+    app.register_blueprint(deposits_blueprint)
+
     # 创建数据库表
     with app.app_context():
         from sqlalchemy import inspect
@@ -207,6 +210,16 @@ def create_app(test_config=None):
                 if 'account_isin' not in acct_cols:
                     db.session.execute(db.text(
                         'ALTER TABLE "account" ADD COLUMN "account_isin" VARCHAR(12)'
+                    ))
+                    db.session.commit()
+                    inspector.info_cache.clear()  # 清除缓存以刷新列信息
+
+            # 0.3.9: 定期存款表补充账户关联字段
+            if 'time_deposit' in existing_tables:
+                td_cols = {c['name'] for c in inspector.get_columns('time_deposit')}
+                if 'account_id' not in td_cols:
+                    db.session.execute(db.text(
+                        'ALTER TABLE "time_deposit" ADD COLUMN "account_id" INTEGER'
                     ))
                     db.session.commit()
                     inspector.info_cache.clear()  # 清除缓存以刷新列信息

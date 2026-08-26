@@ -4,10 +4,14 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from sqlalchemy import select, delete, false
 from app import db
-from app.models import Transaction, Account, Category, Owner, TransactionStatus, AccountBalance
+from app.models import (Transaction, Account, Category, Owner, TransactionStatus,
+                         AccountBalance, TimeDeposit, DepositStatus)
 from app.routes.accounts import get_fx_rate_to_hkd
 
 transactions = Blueprint('transactions', __name__)
+
+# 定期存款 / 货币联系存款账户类型（开立/到期触发存款记录流程）
+DEPOSIT_ACCOUNT_TYPES = ('TIME_DEPOSIT', 'CURRENCY_LINKED_DEPOSIT')
 
 
 def invalidate_account_balances(account_id, from_datetime):
@@ -206,6 +210,32 @@ def dashboard():
     )
     categories = db.session.execute(category_stmt).scalars().all()
     
+    # 定期存款/货币联系存款流程上下文（添加转账交易后弹出填写/确认窗口）
+    deposit_flow = request.args.get('deposit_flow', '')
+    deposit_data = None
+    in_progress_deposits = []
+    if deposit_flow in ('open', 'mature'):
+        _dep_account = db.session.get(Account, request.args.get('deposit_account_id', type=int))
+        deposit_data = {
+            'trans_id': request.args.get('deposit_trans_id', type=int),
+            'account_id': request.args.get('deposit_account_id', type=int),
+            'account_type': request.args.get('deposit_account_type', ''),
+            'account_name': _dep_account.account_name if _dep_account else '',
+            'currency': request.args.get('deposit_currency', ''),
+            'amount': request.args.get('deposit_amount', type=float),
+            'date': request.args.get('deposit_date', ''),
+        }
+        if deposit_flow == 'mature' and deposit_data['account_id']:
+            dep_stmt = (
+                select(TimeDeposit)
+                .where(
+                    TimeDeposit.status == DepositStatus.IN_PROGRESS,
+                    TimeDeposit.account_id == deposit_data['account_id']
+                )
+                .order_by(TimeDeposit.subscription_date.desc(), TimeDeposit.deposit_id.desc())
+            )
+            in_progress_deposits = db.session.execute(dep_stmt).scalars().all()
+    
     return render_template(
         'dashboard.html',
         daily_sorted=daily_sorted,
@@ -223,6 +253,9 @@ def dashboard():
         account_filter=account_id or '',
         from_accounts=from_accounts,
         active_tab=active_tab,
+        deposit_flow=deposit_flow,
+        deposit_data=deposit_data,
+        in_progress_deposits=in_progress_deposits,
     )
 
 
@@ -432,6 +465,35 @@ def add_transaction():
     
     db.session.commit()
     flash('交易添加成功')
+
+    # 定期存款/货币联系存款流程：转账到存款账户 → 开立；转账从存款账户 → 到期
+    if trans_type == 'transfer':
+        to_account = db.session.get(Account, to_account_id)
+        from_account_type = account.account_type.value
+        to_account_type = to_account.account_type.value if to_account else ''
+        deposit_params = {
+            'tab': 'list-tab',
+            'deposit_trans_id': trans_out.trans_id,
+            'deposit_account_id': to_account_id,
+            'deposit_currency': to_currency,
+            'deposit_amount': to_amount,
+            'deposit_date': trans_date,
+        }
+        if to_account_type in DEPOSIT_ACCOUNT_TYPES:
+            deposit_params.update({
+                'deposit_flow': 'open',
+                'deposit_account_type': to_account_type,
+            })
+            return redirect(url_for('transactions.dashboard', **deposit_params))
+        if from_account_type in DEPOSIT_ACCOUNT_TYPES:
+            deposit_params.update({
+                'deposit_flow': 'mature',
+                'deposit_account_id': account_id,
+                'deposit_currency': currency,
+                'deposit_amount': amount,
+            })
+            return redirect(url_for('transactions.dashboard', **deposit_params))
+
     return _dashboard_redirect()
 
 

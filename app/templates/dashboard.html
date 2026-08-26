@@ -493,6 +493,154 @@
     </div>
 </div>
 
+<!-- 开立定期存款弹窗 -->
+<div id="deposit-open-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2002; justify-content: center; align-items: center;">
+    <div class="card" style="max-width: 520px; width: 90%; max-height: 85vh; overflow-y: auto;">
+        <h3 id="deposit-open-title">💎 开立定期存款</h3>
+        <p style="color: #888; font-size: 13px; margin-bottom: 16px;">转账交易已添加，请补充存款信息（交易相关内容已预填）</p>
+        <form method="POST" action="{{ url_for('deposits.create_deposit') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="trans_id" value="{{ deposit_data.trans_id if deposit_data else '' }}">
+            <input type="hidden" name="account_id" value="{{ deposit_data.account_id if deposit_data else '' }}">
+            <input type="hidden" id="deposit-account-type" value="{{ deposit_data.account_type if deposit_data else '' }}">
+
+            <div class="form-group">
+                <label>存款账户</label>
+                <input type="text" value="{{ deposit_data.account_name if deposit_data else '' }}" readonly>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>存款货币</label>
+                    <input type="text" name="deposit_currency_name" value="{{ deposit_data.currency if deposit_data else 'HKD' }}" readonly>
+                </div>
+                <div class="form-group">
+                    <label>存款金额</label>
+                    <input type="number" name="amount" value="{{ deposit_data.amount if deposit_data else '' }}" step="0.01" min="0.01" required readonly>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>年利率 (%) *</label>
+                    <input type="number" name="interest_rate" step="0.01" min="0" placeholder="例如：3.5" required>
+                </div>
+                <div class="form-group">
+                    <label>到期日期 *</label>
+                    <input type="date" name="maturity_date" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>开立日期</label>
+                <input type="date" name="subscription_date" value="{{ deposit_data.date if deposit_data else '' }}" required>
+            </div>
+
+            <div id="cld-fields" style="display: none; border-top: 1px solid #eee; padding-top: 12px; margin-top: 12px;">
+                <h4 style="margin-bottom: 8px; color: #1a1a2e;">🔄 货币联系存款</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>挂钩货币</label>
+                        <input type="text" name="linked_currency_name" placeholder="例如：USD" maxlength="3" style="text-transform: uppercase;">
+                    </div>
+                    <div class="form-group">
+                        <label>挂钩货币金额</label>
+                        <input type="number" name="linked_currency_amount" step="0.01" min="0" placeholder="可选">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>触发汇率</label>
+                    <input type="number" name="strike_rate" step="0.0001" min="0" placeholder="例如：7.8500">
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button type="submit" class="btn btn-primary" style="flex: 1;">✓ 保存存款记录</button>
+                <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="closeDepositOpenModal()">稍后处理</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 定期存款到期弹窗 -->
+<div id="deposit-mature-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2003; justify-content: center; align-items: center;">
+    <div class="card" style="max-width: 520px; width: 90%; max-height: 85vh; overflow-y: auto;">
+        <h3>💎 定期存款到期</h3>
+        <p style="color: #888; font-size: 13px; margin-bottom: 16px;">转账交易已添加，请选择对应的未到期存款以完成到期登记</p>
+        <form method="POST" id="deposit-mature-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="trans_id" value="{{ deposit_data.trans_id if deposit_data else '' }}">
+            <input type="hidden" name="deposit_id" id="mature-deposit-id" value="">
+
+            <div class="form-group">
+                <label>选择未到期存款 *</label>
+                <select id="mature-deposit-select" name="mature_deposit_select" onchange="onMatureDepositSelect()">
+                    <option value="">请选择</option>
+                    {% for d in in_progress_deposits %}
+                    <option value="{{ d.deposit_id }}"
+                            data-currency="{{ d.deposit_currency_name }}"
+                            data-amount="{{ d.amount }}"
+                            data-rate="{{ d.interest_rate }}"
+                            data-sub="{{ d.subscription_date.strftime('%Y-%m-%d') }}"
+                            data-mat="{{ d.maturity_date.strftime('%Y-%m-%d') }}"
+                            data-cld="{{ '1' if d.linked_currency_name else '' }}">
+                        #{{ d.deposit_id }} · {{ d.deposit_currency_name }} {{ d.amount|amt }} · {{ d.subscription_date.strftime('%Y-%m-%d') }} ~ {{ d.maturity_date.strftime('%Y-%m-%d') }} @ {{ d.interest_rate|amt(2) }}%
+                    </option>
+                    {% endfor %}
+                </select>
+                {% if not in_progress_deposits %}
+                <small style="color: #e74c3c;">该账户暂无未到期存款，可稍后在「定期存款」页面手动开立</small>
+                {% endif %}
+            </div>
+
+            <div id="mature-deposit-info" style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                <div class="form-row" style="margin-bottom: 8px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>存款货币</label>
+                        <input type="text" id="mature-currency" value="" readonly>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>本金</label>
+                        <input type="text" id="mature-principal" value="" readonly>
+                    </div>
+                </div>
+                <div class="form-row" style="margin-bottom: 8px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>年利率</label>
+                        <input type="text" id="mature-rate" value="" readonly>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>开立 ~ 到期</label>
+                        <input type="text" id="mature-dates" value="" readonly>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>到期收回金额 *</label>
+                    <input type="number" name="matured_amount" id="mature-amount" step="0.01" min="0.01" value="{{ deposit_data.amount if deposit_data else '' }}" oninput="calcMaturePnl()" required>
+                </div>
+                <div class="form-group">
+                    <label>到期货币</label>
+                    <input type="text" name="matured_currency_name" id="mature-currency-name" value="{{ deposit_data.currency if deposit_data else 'HKD' }}" maxlength="3" style="text-transform: uppercase;" oninput="calcMaturePnl()">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>已实现收益 (HKD)</label>
+                <input type="number" name="realized_pnl" id="mature-pnl" step="0.01" placeholder="自动计算">
+                <small style="color: #aaa;">仅以 HKD（基础货币）到期的存款适用；到期收回金额 - 本金</small>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button type="submit" class="btn btn-primary" style="flex: 1;">✓ 确认到期</button>
+                <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="closeMatureDepositModal()">稍后处理</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <style>
     .btn-action {
         display: inline-block;
@@ -938,12 +1086,68 @@
         document.getElementById('edit-modal').style.display = 'none';
     }
 
+    function openDepositOpenModal() {
+        const accType = document.getElementById('deposit-account-type').value;
+        document.getElementById('deposit-open-title').textContent = accType === 'CURRENCY_LINKED_DEPOSIT' ? '💎 开立货币联系存款' : '💎 开立定期存款';
+        document.getElementById('cld-fields').style.display = accType === 'CURRENCY_LINKED_DEPOSIT' ? '' : 'none';
+        document.getElementById('deposit-open-modal').style.display = 'flex';
+    }
+
+    function closeDepositOpenModal() {
+        document.getElementById('deposit-open-modal').style.display = 'none';
+    }
+
+    function openMatureDepositModal() {
+        document.getElementById('deposit-mature-modal').style.display = 'flex';
+        const select = document.getElementById('mature-deposit-select');
+        if (select.options.length <= 1) {
+            onMatureDepositSelect();
+        }
+    }
+
+    function closeMatureDepositModal() {
+        document.getElementById('deposit-mature-modal').style.display = 'none';
+    }
+
+    function onMatureDepositSelect() {
+        const select = document.getElementById('mature-deposit-select');
+        const opt = select.options[select.selectedIndex];
+        document.getElementById('mature-deposit-id').value = opt && opt.value ? opt.value : '';
+        document.getElementById('deposit-mature-form').action = opt && opt.value ? '/deposits/' + opt.value + '/mature' : '';
+        if (!opt || !opt.value) {
+            return;
+        }
+        document.getElementById('mature-currency').value = opt.dataset.currency;
+        document.getElementById('mature-principal').value = opt.dataset.amount;
+        document.getElementById('mature-rate').value = opt.dataset.rate + '%';
+        document.getElementById('mature-dates').value = opt.dataset.sub + ' ~ ' + opt.dataset.mat;
+        if (!document.getElementById('mature-currency-name').value) {
+            document.getElementById('mature-currency-name').value = opt.dataset.currency;
+        }
+        calcMaturePnl();
+    }
+
+    function calcMaturePnl() {
+        const principal = parseFloat(document.getElementById('mature-principal').value) || 0;
+        const matured = parseFloat(document.getElementById('mature-amount').value) || 0;
+        const currency = document.getElementById('mature-currency-name').value || '';
+        if (matured > 0 && currency === 'HKD') {
+            document.getElementById('mature-pnl').value = (matured - principal).toFixed(2);
+        }
+    }
+
     window.onclick = function(event) {
         if (event.target == document.getElementById('detail-modal')) {
             closeDetailModal();
         }
         if (event.target == document.getElementById('edit-modal')) {
             closeEditModal();
+        }
+        if (event.target == document.getElementById('deposit-open-modal')) {
+            closeDepositOpenModal();
+        }
+        if (event.target == document.getElementById('deposit-mature-modal')) {
+            closeMatureDepositModal();
         }
     }
     
@@ -954,6 +1158,12 @@
             switchTab('list-tab');
         } else {
             onTypeChange();
+        }
+        const flow = urlParams.get('deposit_flow');
+        if (flow === 'open') {
+            openDepositOpenModal();
+        } else if (flow === 'mature') {
+            openMatureDepositModal();
         }
     });
 </script>
