@@ -504,6 +504,275 @@ class ImportService:
         if not dry_run:
             db.session.commit()
         return self.results['transactions']
+
+    def _visible_owner_ids(self):
+        """获取当前用户可见的 owner_id 列表（成人可看家庭全部）"""
+        if self.current_user.can_view_family_data():
+            stmt = select(Owner.owner_id).where(Owner.family_id == self.family_id)
+            return db.session.scalars(stmt).all()
+        return [self.owner.owner_id]
+
+    def _match_fund_account(self, hs_code):
+        """按基金代码匹配基金账户（优先别名 account_other_name，其次账户名）"""
+        if not hs_code:
+            return None
+        hs = hs_code.strip()
+        owner_ids = self._visible_owner_ids()
+        accounts = db.session.scalars(
+            select(Account).where(
+                Account.account_type == AccountType.FUND,
+                Account.account_owner_id.in_(owner_ids)
+            )
+        ).all()
+        for acc in accounts:
+            if (acc.account_other_name or '').strip() == hs:
+                return acc
+        for acc in accounts:
+            if acc.account_name.strip() == hs:
+                return acc
+        return None
+
+    def _match_bank_account(self, bank_name):
+        """按机构/名称匹配银行（转出）账户，模糊匹配 account_custodian 或 account_name"""
+        if not bank_name:
+            return None
+        bank_lower = bank_name.strip().lower()
+        owner_ids = self._visible_owner_ids()
+        accounts = db.session.scalars(
+            select(Account).where(
+                Account.account_owner_id.in_(owner_ids),
+                Account.account_type != AccountType.FUND
+            )
+        ).all()
+        for acc in accounts:
+            if bank_lower in (acc.account_custodian or '').lower():
+                return acc
+        for acc in accounts:
+            if bank_lower in (acc.account_name or '').lower():
+                return acc
+        return None
+
+    def _account_label(self, acc):
+        """账户显示标签"""
+        if not acc:
+            return ''
+        return f'{acc.account_type.value} · {acc.account_custodian} · {acc.account_name}'
+
+    def prepare_fund_purchases(self, file_content):
+        """解析基金购买 CSV，返回行列表及匹配状态（不写数据库）
+
+        格式：hs_code, purchase_date, unit, purchase_cost, currency, purchase_unit_cost, purchase_bank
+        hs_code 匹配基金账户别名（account_other_name），purchase_bank 匹配转出账户机构。
+        """
+        reader = csv.DictReader(io.StringIO(file_content), skipinitialspace=True)
+        rows = []
+        for i, row in enumerate(reader):
+            hs_code = (row.get('hs_code', '') or '').strip()
+            purchase_date = (row.get('purchase_date', '') or '').strip()
+            unit = self._safe_float(row.get('unit', ''))
+            purchase_cost = self._safe_float(row.get('purchase_cost', ''))
+            currency = (row.get('currency', 'HKD') or 'HKD').strip().upper()
+            purchase_unit_cost = self._safe_float(row.get('purchase_unit_cost', ''))
+            purchase_bank = (row.get('purchase_bank', '') or '').strip()
+
+            error = None
+            if not hs_code or not purchase_bank:
+                error = '缺少 hs_code 或 purchase_bank'
+            elif purchase_cost is None or purchase_cost <= 0:
+                error = 'purchase_cost 必须大于 0'
+
+            fund_account = None if error else self._match_fund_account(hs_code)
+            bank_account = None if error else self._match_bank_account(purchase_bank)
+
+            rows.append({
+                'row': i + 1,
+                'hs_code': hs_code,
+                'purchase_date': purchase_date,
+                'unit': unit,
+                'purchase_cost': purchase_cost,
+                'currency': currency,
+                'purchase_unit_cost': purchase_unit_cost,
+                'purchase_bank': purchase_bank,
+                'fund_account_id': fund_account.account_id if fund_account else None,
+                'fund_account_label': self._account_label(fund_account),
+                'bank_account_id': bank_account.account_id if bank_account else None,
+                'bank_account_label': self._account_label(bank_account),
+                'error': error,
+            })
+        return rows
+
+    def import_fund_purchases_csv(self, file_content, manual_mappings=None, skipped_rows=None,
+                                  skip_unmatched=False, category_id=None):
+        """导入基金购买交易 CSV，生成「银行账户 → 基金账户」转账交易
+
+        manual_mappings: {行号: {'fund_account_id': ..., 'bank_account_id': ...}} 手动指定账户
+        skipped_rows: 用户明确跳过的行号集合
+        skip_unmatched: 是否跳过未匹配的行（含手动指定后仍无法解析的行）；为 False 时
+            仅跳过「未手动处理且无法自动匹配」的行，手动指定过却无法解析的行仍计为失败
+        category_id: 转账交易使用的分类（不传则使用/创建默认转账分类）
+        """
+        if manual_mappings is None:
+            manual_mappings = {}
+        if skipped_rows is None:
+            skipped_rows = set()
+
+        # 解析分类：优先使用指定分类，否则使用默认转账分类
+        cat_id = category_id
+        if cat_id:
+            try:
+                cat = db.session.get(Category, int(cat_id))
+                cat_id = cat.category_id if cat else None
+            except (TypeError, ValueError):
+                cat_id = None
+        if not cat_id:
+            cat_id = self._get_transfer_category_id()
+
+        reader = csv.DictReader(io.StringIO(file_content), skipinitialspace=True)
+        result = {'success': 0, 'skipped': 0, 'failed': 0, 'details': []}
+
+        for i, row in enumerate(reader):
+            row_num = i + 1
+            hs_code = (row.get('hs_code', '') or '').strip()
+            purchase_date = (row.get('purchase_date', '') or '').strip()
+            bank = (row.get('purchase_bank', '') or '').strip()
+            currency = (row.get('currency', 'HKD') or 'HKD').strip().upper()
+
+            try:
+                if row_num in skipped_rows:
+                    result['skipped'] += 1
+                    result['details'].append({
+                        'row': row_num, 'status': 'skipped', 'hs_code': hs_code,
+                        'reason': '用户跳过'
+                    })
+                    continue
+
+                manual = manual_mappings.get(row_num, {})
+                has_manual = bool(manual)
+                manual_bank_id = manual.get('bank_account_id')
+
+                if not hs_code or (not bank and not manual_bank_id):
+                    raise ValueError('缺少 hs_code 或 purchase_bank')
+                amount = self._safe_float(row.get('purchase_cost', ''))
+                unit_val = self._safe_float(row.get('unit', ''))
+                unit_cost_val = self._safe_float(row.get('purchase_unit_cost', ''))
+                if amount is None or amount <= 0:
+                    raise ValueError('purchase_cost 必须大于 0')
+
+                fund_account = self._resolve_manual_account(manual.get('fund_account_id'))
+                if not fund_account:
+                    fund_account = self._match_fund_account(hs_code)
+                if not fund_account:
+                    if skip_unmatched or not has_manual:
+                        result['skipped'] += 1
+                        result['details'].append({
+                            'row': row_num, 'status': 'skipped', 'hs_code': hs_code,
+                            'reason': '未处理（基金账户未匹配）'
+                        })
+                        continue
+                    raise ValueError(f'无法匹配基金账户（别名）: {hs_code}')
+
+                bank_account = self._resolve_manual_account(manual_bank_id)
+                if not bank_account:
+                    bank_account = self._match_bank_account(bank)
+                if not bank_account:
+                    if skip_unmatched or not has_manual:
+                        result['skipped'] += 1
+                        result['details'].append({
+                            'row': row_num, 'status': 'skipped', 'hs_code': hs_code,
+                            'reason': '未处理（银行账户未匹配）'
+                        })
+                        continue
+                    raise ValueError(f'无法匹配银行账户: {bank}')
+
+                trans_datetime = self._parse_datetime(purchase_date, '')
+
+                # 去重：同基金账户同日同金额（及同单位）已有交易则跳过
+                dup_stmt = select(Transaction).where(
+                    Transaction.trans_account_id == fund_account.account_id,
+                    func.date(Transaction.trans_datetime) == trans_datetime.date(),
+                    Transaction.trans_amount == round(amount, 2),
+                )
+                if unit_val and unit_val > 0:
+                    dup_stmt = dup_stmt.where(Transaction.trans_unit == unit_val)
+                else:
+                    dup_stmt = dup_stmt.where(Transaction.trans_unit.is_(None))
+                if db.session.scalars(dup_stmt).first():
+                    result['skipped'] += 1
+                    result['details'].append({
+                        'row': row_num, 'status': 'skipped', 'hs_code': hs_code,
+                        'reason': '已存在相同交易'
+                    })
+                    continue
+
+                description = f'基金买入: {hs_code}'
+
+                trans_out = Transaction(
+                    trans_datetime=trans_datetime,
+                    trans_desc=f'转出: {description}',
+                    trans_amount=-round(amount, 2),
+                    trans_currency_name=currency,
+                    trans_account_id=bank_account.account_id,
+                    trans_category_id=cat_id,
+                    trans_owner_id=self.owner.owner_id,
+                    trans_status=TransactionStatus.UNVERIFIED,
+                )
+                db.session.add(trans_out)
+                db.session.flush()
+
+                trans_in = Transaction(
+                    trans_datetime=trans_datetime,
+                    trans_desc=f'转入: {description}',
+                    trans_amount=round(amount, 2),
+                    trans_currency_name=currency,
+                    trans_account_id=fund_account.account_id,
+                    trans_category_id=cat_id,
+                    trans_owner_id=self.owner.owner_id,
+                    trans_counter_id=trans_out.trans_id,
+                    trans_status=TransactionStatus.UNVERIFIED,
+                )
+                if unit_val and unit_val > 0 and unit_cost_val is not None:
+                    trans_in.trans_unit = unit_val
+                    trans_in.trans_unit_price = unit_cost_val
+                    trans_in.trans_unit_name = None
+                db.session.add(trans_in)
+                db.session.flush()
+
+                trans_out.trans_counter_id = trans_in.trans_id
+                db.session.add(trans_out)
+
+                result['success'] += 1
+                result['details'].append({
+                    'row': row_num, 'status': 'success', 'hs_code': hs_code,
+                    'bank': bank, 'amount': round(amount, 2),
+                })
+            except Exception as e:
+                result['failed'] += 1
+                result['details'].append({
+                    'row': row_num, 'status': 'failed', 'hs_code': hs_code,
+                    'reason': str(e),
+                })
+
+        db.session.commit()
+        return result
+
+    def _resolve_manual_account(self, account_id):
+        """解析手动映射的账户 ID"""
+        if not account_id:
+            return None
+        try:
+            return db.session.get(Account, int(account_id))
+        except (TypeError, ValueError):
+            return None
+
+    def _safe_float(self, value):
+        """安全解析 float，空值返回 None"""
+        if value is None or str(value).strip() == '':
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+
     
     def _apply_manual_mappings(self, manual_mappings):
         """应用手动映射"""

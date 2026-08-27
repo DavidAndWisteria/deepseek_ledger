@@ -32,12 +32,12 @@
 
 <!-- 导入标签页 -->
 <div class="tabs import-tabs">
-    <div class="tab active" data-tab="bluecoins" onclick="switchImportTab('bluecoins')">💱 Bluecoins 导入</div>
-    <div class="tab" data-tab="other" onclick="switchImportTab('other')">📂 其他格式（即将推出）</div>
+    <div class="tab {{ '' if fund_preview else 'active' }}" data-tab="bluecoins" onclick="switchImportTab('bluecoins')">💱 Bluecoins 导入</div>
+    <div class="tab {{ 'active' if fund_preview else '' }}" data-tab="other" onclick="switchImportTab('other')">📂 csv导入</div>
 </div>
 
 <!-- Bluecoins 导入内容 -->
-<div id="bluecoins" class="tab-content import-tab-content active">
+<div id="bluecoins" class="tab-content import-tab-content {{ '' if fund_preview else 'active' }}">
 
 {% if not preview %}
 <!-- 导入说明 -->
@@ -416,13 +416,207 @@
 {% endif %}
 </div>
 
-<!-- 其他导入预留 -->
-<div id="other" class="tab-content import-tab-content">
-    <div class="card" style="text-align: center; padding: 60px;">
-        <p style="font-size: 48px; margin-bottom: 16px;">🚧</p>
-        <h3>其他格式导入功能开发中</h3>
-        <p style="color: #888;">敬请期待</p>
+<!-- 其他导入 -->
+<div id="other" class="tab-content import-tab-content {{ 'active' if fund_preview else '' }}">
+
+{% if fund_preview %}
+<!-- 基金导入预览 -->
+<div class="card" style="margin-bottom: 20px;">
+    <h3>📊 基金购买导入预览</h3>
+    <div class="summary-cards" style="margin-bottom: 0;">
+        <div class="summary-card">
+            <div class="label">✅ 自动匹配</div>
+            <div class="value text-income">{{ fund_auto_count }}</div>
+        </div>
+        <div class="summary-card">
+            <div class="label">🔧 需处理</div>
+            <div class="value" style="color: #856404;">{{ fund_need_count }}</div>
+        </div>
     </div>
+    <p style="color: #888; font-size: 13px; margin-top: 12px;">
+        自动匹配的行将直接生成「银行 → 基金」转账交易；无法自动匹配的行请手动选择账户，或跳过。
+        已匹配的行可查看下方列表。
+    </p>
+</div>
+
+{% if fund_need_count > 0 %}
+<div class="card" style="margin-bottom: 20px;">
+    <h3>🔧 手动处理未匹配行（共 {{ fund_need_count }} 笔）</h3>
+    <p style="color: #888; font-size: 13px; margin-bottom: 16px;">
+        为无法自动匹配的行选择对应的基金账户 / 银行账户。未选择且无法自动匹配的行将<strong>跳过（未处理）</strong>，
+        不计入失败；已手动选择却仍无法解析的行才会失败。
+    </p>
+    <form method="POST" action="{{ url_for('importer.confirm_fund_purchases') }}" id="fund-confirm-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group" style="max-width: 380px; margin-bottom: 16px;">
+            <label>交易类别</label>
+            <select name="fund_category" style="width: 100%; padding: 8px 10px; font-size: 13px;">
+                <option value="">选择分类...</option>
+                {% for cat in fund_transfer_categories %}
+                <option value="{{ cat.category_id }}">{{ cat.category_class }} › {{ cat.category_subclass or '-' }} › {{ cat.category_name }}</option>
+                {% endfor %}
+            </select>
+            <small style="color: #aaa;">导入的「银行 → 基金」转账交易使用的转账分类</small>
+        </div>
+        {% for r in fund_rows if r['error'] or not r['fund_account_id'] or not r['bank_account_id'] %}
+        <div class="form-group" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+                <label style="font-weight: 600; font-size: 13px;">
+                    <span style="color: #2980b9;">#{{ r.row }}</span>
+                    {{ r.purchase_date or '-' }} · <span style="color: #27ae60;">{{ r.hs_code or '-' }}</span> ·
+                    {{ r.currency }} {{ r.purchase_cost if r.purchase_cost is not none else '-' }}
+                    {% if r.unit %} · {{ r.unit }} 份 @ {{ r.purchase_unit_cost }}{% endif %}
+                    · 银行: <span style="color: #e67e22;">{{ r.purchase_bank }}</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: #e74c3c; white-space: nowrap; cursor: pointer;">
+                    <input type="checkbox" name="fund_skip_{{ r.row }}" value="1"> 跳过此笔
+                </label>
+            </div>
+            {% if r['error'] %}
+            <p style="color: #e74c3c; font-size: 12px; margin-bottom: 8px;">⚠ {{ r.error }}</p>
+            {% endif %}
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 200px;">
+                    <label style="font-size: 11px; color: #888;">基金账户{% if not r['fund_account_id'] %} *{% endif %}</label>
+                    <select name="fund_fund_{{ r.row }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                        <option value="">
+                            {% if r['fund_account_id'] %}{{ r.fund_account_label }}（自动）{% else %}选择基金账户...{% endif %}
+                        </option>
+                        {% for acc in accounts if acc.account_type.value == 'FUND' %}
+                        <option value="{{ acc.account_id }}">{{ acc.account_type.value }} · {{ acc.account_custodian }} · {{ acc.account_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 200px;">
+                    <label style="font-size: 11px; color: #888;">银行账户{% if not r['bank_account_id'] %} *{% endif %}</label>
+                    <select name="fund_bank_{{ r.row }}" style="width: 100%; padding: 6px 8px; font-size: 13px;">
+                        <option value="">
+                            {% if r['bank_account_id'] %}{{ r.bank_account_label }}（自动）{% else %}选择银行账户...{% endif %}
+                        </option>
+                        {% for acc in accounts if acc.account_type.value != 'FUND' %}
+                        <option value="{{ acc.account_id }}">{{ acc.account_type.value }} · {{ acc.account_custodian }} · {{ acc.account_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        <div style="display: flex; gap: 12px; margin-top: 16px;">
+            <button type="submit" class="btn btn-primary">✅ 确认导入</button>
+            <button type="submit" name="skip_unmatched" value="1" class="btn" style="background: #f39c12; color: white;">⏭ 仅导入已匹配的（跳过其余）</button>
+            <a href="{{ url_for('importer.import_page') }}" class="btn btn-secondary">取消</a>
+        </div>
+    </form>
+</div>
+{% else %}
+<div class="card" style="background: #d5f5e3; text-align: center; padding: 40px;">
+    <p style="font-size: 48px; margin-bottom: 16px;">🎉</p>
+    <h3>全部 {{ fund_auto_count }} 笔基金购买已自动匹配！</h3>
+    <p style="color: #666; margin-bottom: 20px;">点击下方按钮完成导入。</p>
+    <form method="POST" action="{{ url_for('importer.confirm_fund_purchases') }}" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="max-width: 380px; margin: 0 auto 16px; text-align: left;">
+            <label>交易类别</label>
+            <select name="fund_category" style="width: 100%; padding: 8px 10px; font-size: 13px;">
+                <option value="">选择分类...</option>
+                {% for cat in fund_transfer_categories %}
+                <option value="{{ cat.category_id }}">{{ cat.category_class }} › {{ cat.category_subclass or '-' }} › {{ cat.category_name }}</option>
+                {% endfor %}
+            </select>
+            <small style="color: #aaa;">导入的「银行 → 基金」转账交易使用的转账分类</small>
+        </div>
+        <button type="submit" class="btn btn-primary" style="font-size: 16px; padding: 12px 32px;">✅ 确认导入</button>
+    </form>
+    <a href="{{ url_for('importer.import_page') }}" class="btn btn-secondary" style="margin-left: 8px;">返回</a>
+</div>
+{% endif %}
+
+{% if fund_auto_count > 0 %}
+<div class="card">
+    <h3>✅ 已自动匹配的行（{{ fund_auto_count }} 笔）</h3>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>日期</th>
+                    <th>基金代码</th>
+                    <th>份额</th>
+                    <th>金额</th>
+                    <th>单价</th>
+                    <th>基金账户</th>
+                    <th>银行账户</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in fund_rows if not r['error'] and r['fund_account_id'] and r['bank_account_id'] %}
+                <tr>
+                    <td>{{ r.row }}</td>
+                    <td>{{ r.purchase_date }}</td>
+                    <td>{{ r.hs_code }}</td>
+                    <td>{{ r.unit if r.unit is not none else '-' }}</td>
+                    <td>{{ r.currency }} {{ r.purchase_cost }}</td>
+                    <td>{{ r.purchase_unit_cost if r.purchase_unit_cost is not none else '-' }}</td>
+                    <td>{{ r.fund_account_label }}</td>
+                    <td>{{ r.bank_account_label }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+
+        <!-- 基金购买导入 -->
+        <div class="card" style="display: flex; flex-direction: column;">
+            <h3 style="margin-bottom: 12px;">📈 导入基金购买交易</h3>
+            <p style="color: #888; font-size: 13px; margin-bottom: 12px;">
+                按基金代码（<code>hs_code</code>）匹配基金账户别名，生成「银行 → 基金」转账交易并记录份额与单价。
+            </p>
+
+            <form method="POST" action="{{ url_for('importer.upload_fund_purchases') }}" enctype="multipart/form-data" style="margin-bottom: 12px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <input type="file" name="file" accept=".csv" required 
+                           style="padding: 8px; border: 1px dashed #ccc; border-radius: 6px; width: 100%; cursor: pointer;">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">📤 导入基金购买</button>
+            </form>
+
+            <details style="font-size: 12px; color: #888; border-top: 1px solid #eee; padding-top: 10px;">
+                <summary style="cursor: pointer; font-weight: 500; color: #666; margin-bottom: 8px;">📋 格式说明与范例</summary>
+                <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; line-height: 1.8;">
+                    <strong>列顺序：</strong><br>
+                    hs_code, purchase_date, unit, purchase_cost, currency, purchase_unit_cost, purchase_bank
+                    <br><br>
+                    <strong>范例：</strong><br>
+                    <span style="color: #27ae60;">"U44976"</span>, <span style="color: #8e44ad;">2020-07-02</span>, 181.494, 199999.13, <span style="color: #16a085;">"HKD"</span>, 1101.96, <span style="color: #e67e22;">"Hang Seng"</span>
+                    <br><br>
+                    <strong>字段说明：</strong><br>
+                    <table style="margin-top: 4px; border-collapse: collapse; width: 100%;">
+                        <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">hs_code</td><td>基金代码，匹配基金账户别名（account_other_name）</td></tr>
+                        <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">purchase_date</td><td>购买日期 YYYY-MM-DD</td></tr>
+                        <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">unit</td><td>购买份额</td></tr>
+                        <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">purchase_cost</td><td>购买金额（转账金额）</td></tr>
+                        <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">currency</td><td>货币代码</td></tr>
+                        <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">purchase_unit_cost</td><td>单位成本（单价）</td></tr>
+                        <tr><td style="padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top;">purchase_bank</td><td>银行名称，匹配账户机构（account_custodian）</td></tr>
+                    </table>
+                </div>
+            </details>
+        </div>
+
+        <!-- CLD 导入预留 -->
+        <div class="card" style="display: flex; flex-direction: column; justify-content: center; text-align: center;">
+            <p style="font-size: 40px; margin-bottom: 12px;">🚧</p>
+            <h3 style="margin-bottom: 8px;">🔄 货币联系存款（CLD）导入</h3>
+            <p style="color: #888; font-size: 13px;">功能预留，开发中敬请期待</p>
+        </div>
+    </div>
+{% endif %}
 </div>
 
 <script>

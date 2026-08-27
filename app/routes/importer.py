@@ -335,6 +335,134 @@ def confirm_transactions():
     return redirect(url_for('importer.import_page'))
 
 
+@importer.route('/import/fund-purchases/upload', methods=['POST'])
+@login_required
+def upload_fund_purchases():
+    """上传基金购买 CSV 并预览（未匹配的账户可手动处理）"""
+    if 'file' not in request.files:
+        flash('请选择文件')
+        return redirect(url_for('importer.import_page'))
+
+    file = request.files['file']
+    if file.filename == '':
+        flash('请选择文件')
+        return redirect(url_for('importer.import_page'))
+
+    try:
+        content = file.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        flash('文件编码错误，请使用 UTF-8 编码')
+        return redirect(url_for('importer.import_page'))
+
+    session['fund_import_csv_content'] = content
+
+    service = ImportService(current_user)
+    rows = service.prepare_fund_purchases(content)
+
+    owner = current_user.owner
+    family_owner_stmt = select(Owner).where(Owner.family_id == owner.family_id)
+    family_owners = db.session.execute(family_owner_stmt).scalars().all()
+    family_owner_ids = [o.owner_id for o in family_owners]
+
+    account_stmt = (
+        select(Account)
+        .where(Account.account_owner_id.in_(family_owner_ids))
+        .order_by(Account.account_type, Account.account_custodian, Account.account_name)
+    )
+    accounts = db.session.execute(account_stmt).scalars().all()
+
+    # 转账交易分类（基金购买生成的转账用），与添加交易页面的转账分类一致
+    service._get_transfer_category_id()  # 确保默认转账分类存在
+    transfer_category_stmt = (
+        select(Category)
+        .where(Category.category_type == CategoryType.TRANSFER)
+        .order_by(Category.category_class, Category.category_subclass, Category.category_name)
+    )
+    fund_transfer_categories = db.session.execute(transfer_category_stmt).scalars().all()
+    db.session.commit()
+
+    auto_count = sum(1 for r in rows if not r['error'] and r['fund_account_id'] and r['bank_account_id'])
+    need_count = len(rows) - auto_count
+
+    return render_template(
+        'import.html',
+        fund_preview=True,
+        fund_rows=rows,
+        fund_auto_count=auto_count,
+        fund_need_count=need_count,
+        accounts=accounts,
+        fund_transfer_categories=fund_transfer_categories,
+    )
+
+
+@importer.route('/import/fund-purchases/confirm', methods=['POST'])
+@login_required
+def confirm_fund_purchases():
+    """确认导入基金购买（应用手动映射/跳过）"""
+    content = session.get('fund_import_csv_content', '')
+    if not content:
+        flash('请先上传文件')
+        return redirect(url_for('importer.import_page'))
+
+    service = ImportService(current_user)
+
+    skip_unmatched = request.form.get('skip_unmatched') == '1'
+    manual_mappings = {}
+    skipped_rows = set()
+
+    for key, value in request.form.items():
+        if key.startswith('fund_fund_'):
+            try:
+                row_num = int(key.replace('fund_fund_', ''))
+            except ValueError:
+                continue
+            if value:
+                manual_mappings.setdefault(row_num, {})['fund_account_id'] = value
+        elif key.startswith('fund_bank_'):
+            try:
+                row_num = int(key.replace('fund_bank_', ''))
+            except ValueError:
+                continue
+            if value:
+                manual_mappings.setdefault(row_num, {})['bank_account_id'] = value
+        elif key.startswith('fund_skip_'):
+            try:
+                row_num = int(key.replace('fund_skip_', ''))
+            except ValueError:
+                continue
+            if value == '1':
+                skipped_rows.add(row_num)
+
+    result = service.import_fund_purchases_csv(
+        content,
+        manual_mappings=manual_mappings,
+        skipped_rows=skipped_rows,
+        skip_unmatched=skip_unmatched,
+        category_id=request.form.get('fund_category', type=int)
+    )
+
+    # 跳过原因细分（已存在 / 未处理 / 用户跳过）
+    skip_detail = {}
+    for d in result['details']:
+        if d['status'] != 'skipped':
+            continue
+        reason = d.get('reason', '')
+        if reason == '已存在相同交易':
+            label = '已存在'
+        elif reason == '用户跳过':
+            label = '用户跳过'
+        else:
+            label = '未处理'
+        skip_detail[label] = skip_detail.get(label, 0) + 1
+
+    msg = f'基金购买导入完成：成功 {result["success"]}，跳过 {result["skipped"]}，失败 {result["failed"]}'
+    if skip_detail:
+        msg += '（' + '、'.join(f'{k} {v}' for k, v in skip_detail.items()) + '）'
+    flash(msg)
+    session.pop('fund_import_csv_content', None)
+    return redirect(url_for('importer.import_page'))
+
+
 # download_skipped 路由
 @importer.route('/import/download-skipped')
 @login_required

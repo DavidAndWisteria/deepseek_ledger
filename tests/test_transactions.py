@@ -860,3 +860,227 @@ class TestFundTransactionRoutes:
             assert out.trans_unit == -50
             assert out.trans_unit_price == 20
             assert out.is_fx is False
+
+    def test_edit_transfer_updates_both_sides(self, logged_in_client, app, test_owner, test_category):
+        """编辑转账（点击转出侧）：同时更新转出+转入两侧账户、金额及基金份额/单价"""
+        fund_id = self._create_fund_account(app, test_owner, 'HKD')
+        with app.app_context():
+            bank1 = Account(
+                account_name='银行A', account_type=AccountType.SAVING,
+                account_custodian='银行', account_currency_name='HKD', account_owner_id=test_owner
+            )
+            bank2 = Account(
+                account_name='银行B', account_type=AccountType.SAVING,
+                account_custodian='银行', account_currency_name='HKD', account_owner_id=test_owner
+            )
+            db.session.add_all([bank1, bank2])
+            db.session.commit()
+            bank1_id, bank2_id = bank1.account_id, bank2.account_id
+
+        # 银行A → 基金 转账 1000
+        resp = logged_in_client.post('/add', data={
+            'trans_type': 'transfer',
+            'account_id': bank1_id,
+            'to_account_id': fund_id,
+            'category_id': test_category,
+            'currency': 'HKD',
+            'to_currency': 'HKD',
+            'amount': '1000.00',
+            'to_amount': '1000.00',
+            'trans_date': '2026-06-20',
+            'trans_time': '12:00',
+            'description': '编辑转账测试'
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+
+        with app.app_context():
+            out_txn = db.session.scalars(select(Transaction).where(Transaction.trans_desc == '转出: 编辑转账测试')).first()
+            in_txn = db.session.scalars(select(Transaction).where(Transaction.trans_desc == '转入: 编辑转账测试')).first()
+            assert out_txn is not None and in_txn is not None
+            out_id, in_id = out_txn.trans_id, in_txn.trans_id
+            fund_db_id = in_txn.trans_account_id
+
+        # 点击转出侧编辑：改银行B、金额1500，并给基金侧补上份额 75 @ 20
+        resp = logged_in_client.post(f'/edit/{out_id}', data={
+            'category_id': test_category,
+            'out_account_id': bank2_id,
+            'out_amount': '1500.00',
+            'out_currency': 'HKD',
+            'in_account_id': fund_db_id,
+            'in_amount': '1500.00',
+            'in_currency': 'HKD',
+            'in_unit': '75',
+            'in_unit_price': '20',
+            'trans_date': '2026-06-21',
+            'trans_time': '09:30',
+            'description': '已编辑转账'
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+        assert '交易更新成功'.encode('utf-8') in resp.data
+
+        with app.app_context():
+            out = db.session.get(Transaction, out_id)
+            inn = db.session.get(Transaction, in_id)
+            assert out.trans_account_id == bank2_id
+            assert out.trans_amount == -1500.00
+            assert out.trans_unit is None
+            assert inn.trans_account_id == fund_db_id
+            assert inn.trans_amount == 1500.00
+            assert inn.trans_unit == 75
+            assert inn.trans_unit_price == 20
+            assert inn.trans_desc == '已编辑转账'
+            assert out.trans_desc == '已编辑转账'
+            assert out.trans_datetime.day == 21
+            assert out.trans_category_id == test_category
+
+    def test_edit_transfer_from_in_side(self, logged_in_client, app, test_owner, test_category):
+        """编辑转账（点击转入侧）：从转入侧提交同样更新两侧金额"""
+        with app.app_context():
+            acc1 = Account(
+                account_name='账户1', account_type=AccountType.SAVING,
+                account_custodian='银行', account_currency_name='HKD', account_owner_id=test_owner
+            )
+            acc2 = Account(
+                account_name='账户2', account_type=AccountType.SAVING,
+                account_custodian='银行', account_currency_name='HKD', account_owner_id=test_owner
+            )
+            db.session.add_all([acc1, acc2])
+            db.session.commit()
+            acc1_id, acc2_id = acc1.account_id, acc2.account_id
+
+        resp = logged_in_client.post('/add', data={
+            'trans_type': 'transfer',
+            'account_id': acc1_id,
+            'to_account_id': acc2_id,
+            'category_id': test_category,
+            'currency': 'HKD',
+            'to_currency': 'HKD',
+            'amount': '1000.00',
+            'to_amount': '1000.00',
+            'trans_date': '2026-06-20',
+            'trans_time': '12:00',
+            'description': '转入侧编辑'
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+
+        with app.app_context():
+            out_txn = db.session.scalars(select(Transaction).where(Transaction.trans_desc == '转出: 转入侧编辑')).first()
+            in_txn = db.session.scalars(select(Transaction).where(Transaction.trans_desc == '转入: 转入侧编辑')).first()
+            assert out_txn is not None and in_txn is not None
+            out_id, in_id = out_txn.trans_id, in_txn.trans_id
+
+        # 点击转入侧编辑，仅改金额
+        resp = logged_in_client.post(f'/edit/{in_id}', data={
+            'category_id': test_category,
+            'out_account_id': acc1_id,
+            'out_amount': '1234.00',
+            'out_currency': 'HKD',
+            'in_account_id': acc2_id,
+            'in_amount': '1234.00',
+            'in_currency': 'HKD',
+            'trans_date': '2026-06-20',
+            'trans_time': '12:00',
+            'description': '转入侧编辑'
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+        assert '交易更新成功'.encode('utf-8') in resp.data
+
+        with app.app_context():
+            out = db.session.get(Transaction, out_id)
+            inn = db.session.get(Transaction, in_id)
+            assert out.trans_amount == -1234.00
+            assert inn.trans_amount == 1234.00
+            assert out.trans_account_id == acc1_id
+            assert inn.trans_account_id == acc2_id
+
+    def test_edit_transfer_missing_side_fails(self, logged_in_client, app, test_owner, test_category):
+        """编辑转账缺少任一侧账户/金额 → 提示请填写完整信息"""
+        with app.app_context():
+            acc1 = Account(
+                account_name='账户1', account_type=AccountType.SAVING,
+                account_custodian='银行', account_currency_name='HKD', account_owner_id=test_owner
+            )
+            acc2 = Account(
+                account_name='账户2', account_type=AccountType.SAVING,
+                account_custodian='银行', account_currency_name='HKD', account_owner_id=test_owner
+            )
+            db.session.add_all([acc1, acc2])
+            db.session.commit()
+            acc1_id, acc2_id = acc1.account_id, acc2.account_id
+
+        resp = logged_in_client.post('/add', data={
+            'trans_type': 'transfer',
+            'account_id': acc1_id,
+            'to_account_id': acc2_id,
+            'category_id': test_category,
+            'currency': 'HKD',
+            'to_currency': 'HKD',
+            'amount': '1000.00',
+            'to_amount': '1000.00',
+            'trans_date': '2026-06-20',
+            'trans_time': '12:00',
+            'description': '缺失测试'
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+
+        with app.app_context():
+            out_id = db.session.scalars(select(Transaction).where(Transaction.trans_desc == '转出: 缺失测试')).first().trans_id
+
+        resp = logged_in_client.post(f'/edit/{out_id}', data={
+            'category_id': test_category,
+            'out_account_id': acc1_id,
+            'out_amount': '1000.00',
+            'out_currency': 'HKD',
+            # 缺少转入侧
+            'trans_date': '2026-06-20',
+            'trans_time': '12:00',
+            'description': '缺失测试'
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+        assert '请填写完整信息'.encode('utf-8') in resp.data
+
+    def test_dashboard_transfer_row_contains_both_sides(self, logged_in_client, app, test_owner, test_category):
+        """列表页：转账交易的详情数据同时携带转出/转入两侧（含基金份额与单价）"""
+        fund_id = self._create_fund_account(app, test_owner, 'HKD')
+        with app.app_context():
+            bank = Account(
+                account_name='恒生卡', account_type=AccountType.SAVING,
+                account_custodian='银行', account_currency_name='HKD', account_owner_id=test_owner
+            )
+            db.session.add(bank)
+            db.session.commit()
+            bank_id = bank.account_id
+
+        # 银行 → 基金 转账，并手动给基金侧补份额/单价（模拟基金购买导入后的状态）
+        with app.app_context():
+            out = Transaction(
+                trans_datetime=datetime(2026, 6, 20, 12, 0, tzinfo=timezone.utc),
+                trans_desc='转出: 基金购买', trans_amount=-1000.00,
+                trans_currency_name='HKD', trans_account_id=bank_id,
+                trans_category_id=test_category, trans_owner_id=test_owner,
+                trans_status=TransactionStatus.UNVERIFIED
+            )
+            db.session.add(out)
+            db.session.flush()
+            inn = Transaction(
+                trans_datetime=datetime(2026, 6, 20, 12, 0, tzinfo=timezone.utc),
+                trans_desc='转入: 基金购买', trans_amount=1000.00,
+                trans_currency_name='HKD', trans_account_id=fund_id,
+                trans_category_id=test_category, trans_owner_id=test_owner,
+                trans_counter_id=out.trans_id, trans_status=TransactionStatus.UNVERIFIED,
+                trans_unit=50.0, trans_unit_price=20.0
+            )
+            db.session.add(inn)
+            db.session.flush()
+            out.trans_counter_id = inn.trans_id
+            db.session.commit()
+
+        resp = logged_in_client.get('/?start_date=2026-06-01&end_date=2026-06-30&tab=list-tab')
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        # 转出/转入两侧数据均出现在详情按钮中，且基金份额与单价包含在内
+        assert 'out: {id:' in html
+        assert 'in: {id:' in html
+        assert 'unit: 50' in html
+        assert 'unitPrice: 20' in html
+        assert '基金购买'.encode('utf-8') in resp.data

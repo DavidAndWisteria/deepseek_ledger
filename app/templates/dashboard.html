@@ -9,6 +9,41 @@
 {% if from_accounts == '1' %}<input type="hidden" name="from_accounts" value="1">{% endif %}
 {% endmacro %}
 
+{% macro currency_options() %}
+<option value="HKD">HKD</option>
+<option value="USD">USD</option>
+<option value="CNY">CNY</option>
+<option value="JPY">JPY</option>
+<option value="GBP">GBP</option>
+<option value="EUR">EUR</option>
+<option value="AUD">AUD</option>
+<option value="SGD">SGD</option>
+{% endmacro %}
+
+{# 生成交易详情 JS 对象字面量；转账交易同时携带转出/转入两侧数据 #}
+{% macro tx_detail_data(t) %}
+{% set cnt = t.counter_transaction if t.is_transfer() else none %}
+{% set out_side = (t if t.trans_amount < 0 else cnt) if cnt else none %}
+{% set in_side = (cnt if t.trans_amount < 0 else t) if cnt else none %}
+{id: {{ t.trans_id }}, dt: '{{ t.trans_datetime.strftime('%Y-%m-%d %H:%M') }}',
+ type: '{{ {'I': '收入', 'E': '支出', 'T': '转账'}.get(t.category_rel.category_type.value, '特殊') }}',
+ account: '{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.owner.owner_name }} · {{ t.account_rel.account_name }}',
+ accountId: {{ t.trans_account_id }},
+ category: '{{ t.category_rel.category_class }} › {{ t.category_rel.category_subclass or '-' }} › {{ t.category_rel.category_name }}',
+ categoryId: {{ t.trans_category_id }},
+ amountStr: '{{ (t.trans_fx_currency_name + " " + (t.trans_fx_amount|amt)) if t.is_fx else (t.trans_currency_name + " " + (t.trans_amount|amt)) }}',
+ fxInfo: `{{ ("HKD " + (t.trans_amount|amt) + (" @ " + (t.trans_fx_rate|amt(4)) if t.trans_fx_rate and t.trans_fx_rate > 0 else "")) if t.is_fx else "" }}`,
+ desc: `{{ t.trans_desc or '' }}`,
+ status: '{{ t.trans_status.value }}',
+ amount: {{ (t.trans_fx_amount|abs) if t.is_fx else (t.trans_amount|abs) }},
+ currency: '{{ t.trans_fx_currency_name or t.trans_currency_name }}',
+ unit: {{ t.trans_unit|abs if t.trans_unit is not none else 0 }},
+ unitPrice: {{ t.trans_unit_price if t.trans_unit_price is not none else 0 }},
+ isTransfer: {{ 1 if t.is_transfer() else 0 }},
+ out: {% if out_side %}{id: {{ out_side.trans_id }}, accountId: {{ out_side.trans_account_id }}, account: '{{ out_side.account_rel.account_type.value }} · {{ out_side.account_rel.account_custodian }} · {{ out_side.account_rel.owner.owner_name }} · {{ out_side.account_rel.account_name }}', amount: {{ (out_side.trans_fx_amount|abs) if out_side.is_fx else (out_side.trans_amount|abs) }}, currency: '{{ out_side.trans_fx_currency_name or out_side.trans_currency_name }}', unit: {{ out_side.trans_unit|abs if out_side.trans_unit is not none else 0 }}, unitPrice: {{ out_side.trans_unit_price if out_side.trans_unit_price is not none else 0 }}}{% else %}null{% endif %},
+ in: {% if in_side %}{id: {{ in_side.trans_id }}, accountId: {{ in_side.trans_account_id }}, account: '{{ in_side.account_rel.account_type.value }} · {{ in_side.account_rel.account_custodian }} · {{ in_side.account_rel.owner.owner_name }} · {{ in_side.account_rel.account_name }}', amount: {{ (in_side.trans_fx_amount|abs) if in_side.is_fx else (in_side.trans_amount|abs) }}, currency: '{{ in_side.trans_fx_currency_name or in_side.trans_currency_name }}', unit: {{ in_side.trans_unit|abs if in_side.trans_unit is not none else 0 }}, unitPrice: {{ in_side.trans_unit_price if in_side.trans_unit_price is not none else 0 }}}{% else %}null{% endif %}}
+{% endmacro %}
+
 {% block content %}
 <h1 style="margin-bottom: 20px; color: #1a1a2e;">📊 财务仪表盘</h1>
 
@@ -343,7 +378,7 @@
                         </td>
                         <td style="white-space: nowrap;">
                             <button type="button" class="btn-action" style="background: #d4e6f1; color: #2980b9;"
-                                    onclick="openDetailModal('{{ t.trans_datetime.strftime('%Y-%m-%d %H:%M') }}', '{{ {'I': '收入', 'E': '支出', 'T': '转账'}.get(t.category_rel.category_type.value, '特殊') }}', '{{ t.account_rel.account_type.value }} · {{ t.account_rel.account_custodian }} · {{ t.account_rel.owner.owner_name }} · {{ t.account_rel.account_name }}', '{{ t.category_rel.category_class }} › {{ t.category_rel.category_subclass or '-' }} › {{ t.category_rel.category_name }}', '{{ (t.trans_fx_currency_name + " " + (t.trans_fx_amount|amt)) if t.is_fx else (t.trans_currency_name + " " + (t.trans_amount|amt)) }}', `{{ ("HKD " + (t.trans_amount|amt) + (" @ " + (t.trans_fx_rate|amt(4)) if t.trans_fx_rate and t.trans_fx_rate > 0 else "")) if t.is_fx else "" }}`, `{{ t.trans_desc or '' }}`, '{{ t.trans_status.value }}', {{ t.trans_id }}, {{ t.trans_account_id }}, {{ t.trans_category_id }}, {{ (t.trans_fx_amount|abs) if t.is_fx else (t.trans_amount|abs) }}, '{{ t.trans_fx_currency_name or t.trans_currency_name }}', {{ t.trans_unit|abs if t.trans_unit is not none else 0 }}, {{ t.trans_unit_price if t.trans_unit_price is not none else 0 }})"
+                                    onclick="openDetailModal({{ tx_detail_data(t) }})"
                                     title="查看详情">📋</button>
                             
                             {% if t.trans_status.value == 'UNVERIFIED' %}
@@ -415,18 +450,6 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             
             <div class="form-group">
-                <label>账户 *</label>
-                <select id="edit_account_id" name="account_id" required onchange="toggleEditUnitGroup()">
-                    <option value="">选择账户</option>
-                        {% for account in accounts %}
-                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}" data-type="{{ account.account_type.value }}" data-has-unit="{{ account.account_has_unit_ind }}">
-                            {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
-                        </option>
-                        {% endfor %}
-                </select>
-            </div>
-            
-            <div class="form-group">
                 <label>分类 *</label>
                 <select id="edit_category_id" name="category_id" required>
                     <option value="">选择分类</option>
@@ -437,35 +460,119 @@
                     {% endfor %}
                 </select>
             </div>
-            
-            <div class="form-row">
-                <div class="form-group" style="flex: 1;">
-                    <label>金额 *</label>
-                    <input type="number" id="edit_amount" name="amount" step="0.01" min="0.01" required oninput="editAmountChange()">
-                </div>
-                <div class="form-group" style="flex: 1; max-width: 110px;">
-                    <label>货币</label>
-                    <select id="edit_currency" name="currency" onchange="toggleEditUnitGroup()">
-                        <option value="HKD">HKD</option>
-                        <option value="USD">USD</option>
-                        <option value="CNY">CNY</option>
-                        <option value="JPY">JPY</option>
-                        <option value="GBP">GBP</option>
-                        <option value="EUR">EUR</option>
-                        <option value="AUD">AUD</option>
-                        <option value="SGD">SGD</option>
+
+            <!-- 非转账：单一账户 -->
+            <div id="edit-single-block">
+                <div class="form-group">
+                    <label>账户 *</label>
+                    <select id="edit_account_id" name="account_id" required onchange="toggleEditUnitGroup()">
+                        <option value="">选择账户</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}" data-type="{{ account.account_type.value }}" data-has-unit="{{ account.account_has_unit_ind }}">
+                            {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
+                        </option>
+                        {% endfor %}
                     </select>
                 </div>
-            </div>
-            
-            <div class="form-row" id="edit-unit-group" style="display: none;">
-                <div class="form-group" style="flex: 1;">
-                    <label for="edit_unit">单位 <span style="font-weight: normal; color: #999;">(可选)</span></label>
-                    <input type="number" id="edit_unit" name="unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="editUnitChange()">
+                
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label>金额 *</label>
+                        <input type="number" id="edit_amount" name="amount" step="0.01" min="0.01" required oninput="editAmountChange()">
+                    </div>
+                    <div class="form-group" style="flex: 1; max-width: 110px;">
+                        <label>货币</label>
+                        <select id="edit_currency" name="currency" onchange="toggleEditUnitGroup()">
+                            {{ currency_options() }}
+                        </select>
+                    </div>
                 </div>
-                <div class="form-group" style="flex: 1;">
-                    <label for="edit_unit_price">单位单价 <span style="font-weight: normal; color: #999;">(可选)</span></label>
-                    <input type="number" id="edit_unit_price" name="unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="editUnitPriceChange()">
+                
+                <div class="form-row" id="edit-unit-group" style="display: none;">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="edit_unit">单位 <span style="font-weight: normal; color: #999;">(可选)</span></label>
+                        <input type="number" id="edit_unit" name="unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="editUnitChange()">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="edit_unit_price">单位单价 <span style="font-weight: normal; color: #999;">(可选)</span></label>
+                        <input type="number" id="edit_unit_price" name="unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="editUnitPriceChange()">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 转账：转出 + 转入 -->
+            <div id="edit-transfer-block" style="display: none;">
+                <div style="background: #fdf2e9; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px;">
+                    <h4 style="margin-bottom: 8px; color: #a04000;">➡️ 转出</h4>
+                    <div class="form-group">
+                        <label>转出账户 *</label>
+                        <select id="edit_out_account_id" name="out_account_id" required onchange="editAccountCurrency('out')">
+                            <option value="">选择账户</option>
+                            {% for account in accounts %}
+                            <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}" data-type="{{ account.account_type.value }}" data-has-unit="{{ account.account_has_unit_ind }}">
+                                {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 1;">
+                            <label>金额 *</label>
+                            <input type="number" id="edit_out_amount" name="out_amount" step="0.01" min="0.01" required oninput="sideAmountChange('out')">
+                        </div>
+                        <div class="form-group" style="flex: 1; max-width: 110px;">
+                            <label>货币</label>
+                            <select id="edit_out_currency" name="out_currency" onchange="toggleEditOutUnitGroup()">
+                                {{ currency_options() }}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row" id="edit-out-unit-group" style="display: none;">
+                        <div class="form-group" style="flex: 1;">
+                            <label for="edit_out_unit">单位 <span style="font-weight: normal; color: #999;">(可选)</span></label>
+                            <input type="number" id="edit_out_unit" name="out_unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="sideUnitChange('out')">
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label for="edit_out_unit_price">单位单价 <span style="font-weight: normal; color: #999;">(可选)</span></label>
+                            <input type="number" id="edit_out_unit_price" name="out_unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="sideUnitChange('out')">
+                        </div>
+                    </div>
+                </div>
+                <div style="background: #eafaf1; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px;">
+                    <h4 style="margin-bottom: 8px; color: #1e8449;">⬅️ 转入</h4>
+                    <div class="form-group">
+                        <label>转入账户 *</label>
+                        <select id="edit_in_account_id" name="in_account_id" required onchange="editAccountCurrency('in')">
+                            <option value="">选择账户</option>
+                            {% for account in accounts %}
+                            <option value="{{ account.account_id }}" data-currency="{{ account.account_currency_name }}" data-type="{{ account.account_type.value }}" data-has-unit="{{ account.account_has_unit_ind }}">
+                                {{ account.account_type.value }} · {{ account.account_custodian }} · {{ account.owner.owner_name }} · {{ account.account_name }} ({{ account.account_currency_name }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 1;">
+                            <label>金额 *</label>
+                            <input type="number" id="edit_in_amount" name="in_amount" step="0.01" min="0.01" required oninput="sideAmountChange('in')">
+                        </div>
+                        <div class="form-group" style="flex: 1; max-width: 110px;">
+                            <label>货币</label>
+                            <select id="edit_in_currency" name="in_currency" onchange="toggleEditInUnitGroup()">
+                                {{ currency_options() }}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row" id="edit-in-unit-group" style="display: none;">
+                        <div class="form-group" style="flex: 1;">
+                            <label for="edit_in_unit">单位 <span style="font-weight: normal; color: #999;">(可选)</span></label>
+                            <input type="number" id="edit_in_unit" name="in_unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="sideUnitChange('in')">
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label for="edit_in_unit_price">单位单价 <span style="font-weight: normal; color: #999;">(可选)</span></label>
+                            <input type="number" id="edit_in_unit_price" name="in_unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="sideUnitChange('in')">
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -942,20 +1049,19 @@
         }
     }
     
-     function openDetailModal(datetime, type, account, category, amount, fxInfo, desc, status, transId, accountId, categoryId, absAmount, currency, unit, unitPrice) {
-        currentDetailTransId = transId;
+    function fmtAmt(v) {
+        return Number(v || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
 
-        editData = {
-            transId: transId,
-            accountId: accountId,
-            categoryId: categoryId,
-            amount: absAmount,
-            currency: currency,
-            datetime: datetime,
-            desc: desc,
-            unit: unit,
-            unitPrice: unitPrice
-        };
+    function fmtUnit(v) {
+        var n = Number(v || 0);
+        if (!n) return '0';
+        return n.toLocaleString('en-US', {maximumFractionDigits: 6});
+    }
+
+    function openDetailModal(data) {
+        currentDetailTransId = data.id;
+        editData = data;
 
         const statusMap = {
             'UNVERIFIED': '⚠ 未核对',
@@ -963,47 +1069,60 @@
             'FLAGGED': '⚑ 有疑问',
             'RECONCILED': '✓✓ 已对账'
         };
-        
-        document.getElementById('detail-content').innerHTML = `
-            <div><strong>日期时间:</strong> ${datetime}</div>
-            <div><strong>类型:</strong> ${type}</div>
-            <div><strong>账户:</strong> ${account}</div>
-            <div><strong>分类:</strong> ${category}</div>
-            <div><strong>金额:</strong> $${amount}</div>
-            ${fxInfo ? '<div style="font-size: 12px; color: #999;"><strong>HKD:</strong> ' + fxInfo + '</div>' : ''}
-            <div><strong>备注:</strong> ${desc || '无'}</div>
-            <div><strong>状态:</strong> ${statusMap[status] || status}</div>
-        `;
+
+        var html = '<div><strong>日期时间:</strong> ' + data.dt + '</div>';
+        html += '<div><strong>类型:</strong> ' + data.type + '</div>';
+        if (data.isTransfer && data.out && data.in) {
+            // 转账：同时展示转出与转入两侧
+            html += '<div style="border-top: 1px solid #eee; margin: 8px 0;"></div>';
+            html += '<div><strong>转出:</strong> ' + data.out.account + '</div>';
+            html += '<div style="color:#e74c3c;">' + data.out.currency + ' -' + fmtAmt(data.out.amount) + '</div>';
+            if (data.out.unit) html += '<div style="font-size:12px;color:#888;">单位: ' + fmtUnit(data.out.unit) + ' 份 @ ' + fmtUnit(data.out.unitPrice) + '</div>';
+            html += '<div style="border-top: 1px solid #eee; margin: 8px 0;"></div>';
+            html += '<div><strong>转入:</strong> ' + data.in.account + '</div>';
+            html += '<div style="color:#27ae60;">' + data.in.currency + ' +' + fmtAmt(data.in.amount) + '</div>';
+            if (data.in.unit) html += '<div style="font-size:12px;color:#888;">单位: ' + fmtUnit(data.in.unit) + ' 份 @ ' + fmtUnit(data.in.unitPrice) + '</div>';
+        } else {
+            html += '<div><strong>账户:</strong> ' + data.account + '</div>';
+            html += '<div><strong>金额:</strong> ' + data.amountStr + '</div>';
+            if (data.fxInfo) html += '<div style="font-size: 12px; color: #999;"><strong>HKD:</strong> ' + data.fxInfo + '</div>';
+            if (data.unit) html += '<div style="font-size: 12px; color: #888;"><strong>单位:</strong> ' + fmtUnit(data.unit) + ' 份 @ ' + fmtUnit(data.unitPrice) + '</div>';
+        }
+        html += '<div><strong>分类:</strong> ' + data.category + '</div>';
+        html += '<div><strong>备注:</strong> ' + (data.desc || '无') + '</div>';
+        html += '<div><strong>状态:</strong> ' + (statusMap[data.status] || data.status) + '</div>';
+
+        document.getElementById('detail-content').innerHTML = html;
         
         // 操作按钮
         let actionsHtml = '';
         actionsHtml += `<button type="button" class="btn-action" style="background:#d4e6f1;color:#2980b9;" onclick="openEditModal()">✏️ 编辑</button>`;
         
-        if (status === 'UNVERIFIED') {
-            actionsHtml += `<form method="POST" action="/status/${transId}/VERIFIED" style="display:inline;">
+        if (data.status === 'UNVERIFIED') {
+            actionsHtml += `<form method="POST" action="/status/${data.id}/VERIFIED" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn-action" style="background:#d5f5e3;color:#27ae60;">✓ 核对</button>
             </form>`;
-        } else if (status === 'VERIFIED') {
-            actionsHtml += `<form method="POST" action="/status/${transId}/UNVERIFIED" style="display:inline;">
+        } else if (data.status === 'VERIFIED') {
+            actionsHtml += `<form method="POST" action="/status/${data.id}/UNVERIFIED" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn-action" style="background:#fef9e7;color:#b7950b;">↩ 取消核对</button>
             </form>`;
-        } else if (status === 'FLAGGED') {
-            actionsHtml += `<form method="POST" action="/status/${transId}/UNVERIFIED" style="display:inline;">
+        } else if (data.status === 'FLAGGED') {
+            actionsHtml += `<form method="POST" action="/status/${data.id}/UNVERIFIED" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn-action" style="background:#eaecee;color:#5d6d7e;">↩ 取消标记</button>
             </form>`;
         }
         
-        if (status !== 'FLAGGED') {
-            actionsHtml += `<form method="POST" action="/status/${transId}/FLAGGED" style="display:inline;">
+        if (data.status !== 'FLAGGED') {
+            actionsHtml += `<form method="POST" action="/status/${data.id}/FLAGGED" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn-action" style="background:#fadbd8;color:#e74c3c;">⚑ 标记</button>
             </form>`;
         }
         
-        actionsHtml += `<form method="POST" action="/delete/${transId}" style="display:inline;" onsubmit="return confirm('确定删除此交易？');">
+        actionsHtml += `<form method="POST" action="/delete/${data.id}" style="display:inline;" onsubmit="return confirm('确定删除此交易？');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn-action" style="background:#f5b7b1;color:#922b21;">🗑 删除</button>
         </form>`;
@@ -1024,21 +1143,45 @@
         var currentParams = new URLSearchParams(window.location.search);
         currentParams.set('tab', 'list-tab');
         var queryString = currentParams.toString();
-        editForm.action = '/edit/' + editData.transId + (queryString ? '?' + queryString : '');
+        editForm.action = '/edit/' + editData.id + (queryString ? '?' + queryString : '');
 
-        document.getElementById('edit_account_id').value = editData.accountId;
         document.getElementById('edit_category_id').value = editData.categoryId;
-        document.getElementById('edit_amount').value = editData.amount;
-        document.getElementById('edit_currency').value = editData.currency || 'HKD';
 
-        var parts = editData.datetime.split(' ');
+        var parts = editData.dt.split(' ');
         document.getElementById('edit_trans_date').value = parts[0];
         document.getElementById('edit_trans_time').value = (parts[1] && parts[1].length >= 5) ? parts[1].substring(0, 5) : '00:00';
         document.getElementById('edit_description').value = editData.desc || '';
 
-        document.getElementById('edit_unit').value = editData.unit || '';
-        document.getElementById('edit_unit_price').value = editData.unitPrice || '';
-        toggleEditUnitGroup();
+        if (editData.isTransfer && editData.out && editData.in) {
+            // 转账：同时显示转出 + 转入两侧
+            document.getElementById('edit-single-block').style.display = 'none';
+            document.getElementById('edit-transfer-block').style.display = '';
+
+            document.getElementById('edit_out_account_id').value = editData.out.accountId;
+            document.getElementById('edit_out_amount').value = editData.out.amount;
+            document.getElementById('edit_out_currency').value = editData.out.currency || 'HKD';
+            document.getElementById('edit_out_unit').value = editData.out.unit || '';
+            document.getElementById('edit_out_unit_price').value = editData.out.unitPrice || '';
+            toggleEditOutUnitGroup();
+
+            document.getElementById('edit_in_account_id').value = editData.in.accountId;
+            document.getElementById('edit_in_amount').value = editData.in.amount;
+            document.getElementById('edit_in_currency').value = editData.in.currency || 'HKD';
+            document.getElementById('edit_in_unit').value = editData.in.unit || '';
+            document.getElementById('edit_in_unit_price').value = editData.in.unitPrice || '';
+            toggleEditInUnitGroup();
+        } else {
+            // 非转账：单一账户
+            document.getElementById('edit-single-block').style.display = '';
+            document.getElementById('edit-transfer-block').style.display = 'none';
+
+            document.getElementById('edit_account_id').value = editData.accountId;
+            document.getElementById('edit_amount').value = editData.amount;
+            document.getElementById('edit_currency').value = editData.currency || 'HKD';
+            document.getElementById('edit_unit').value = editData.unit || '';
+            document.getElementById('edit_unit_price').value = editData.unitPrice || '';
+            toggleEditUnitGroup();
+        }
 
         document.getElementById('detail-modal').style.display = 'none';
         document.getElementById('edit-modal').style.display = 'flex';
@@ -1050,6 +1193,44 @@
         var hasUnit = accountOption ? accountOption.getAttribute('data-has-unit') === 'True' : false;
         var unitGroup = document.getElementById('edit-unit-group');
         unitGroup.style.display = hasUnit ? '' : 'none';
+    }
+
+    function toggleSideUnitGroup(prefix) {
+        var accountSelect = document.getElementById('edit_' + prefix + '_account_id');
+        var accountOption = accountSelect.options[accountSelect.selectedIndex];
+        var hasUnit = accountOption ? accountOption.getAttribute('data-has-unit') === 'True' : false;
+        var unitGroup = document.getElementById('edit-' + prefix + '-unit-group');
+        unitGroup.style.display = hasUnit ? '' : 'none';
+    }
+
+    function toggleEditOutUnitGroup() { toggleSideUnitGroup('out'); }
+    function toggleEditInUnitGroup() { toggleSideUnitGroup('in'); }
+
+    function editAccountCurrency(prefix) {
+        var accountSelect = document.getElementById('edit_' + prefix + '_account_id');
+        var accountOption = accountSelect.options[accountSelect.selectedIndex];
+        var currency = accountOption ? accountOption.getAttribute('data-currency') : null;
+        if (currency) {
+            document.getElementById('edit_' + prefix + '_currency').value = currency;
+        }
+        toggleSideUnitGroup(prefix);
+    }
+
+    function sideAmountChange(prefix) {
+        var unitPrice = parseFloat(document.getElementById('edit_' + prefix + '_unit_price').value) || 0;
+        var amt = parseFloat(document.getElementById('edit_' + prefix + '_amount').value) || 0;
+        if (amt > 0 && unitPrice > 0) {
+            document.getElementById('edit_' + prefix + '_unit').value = (amt / unitPrice).toFixed(6);
+        }
+    }
+
+    function sideUnitChange(prefix) {
+        var amountEl = document.getElementById('edit_' + prefix + '_amount');
+        var unit = parseFloat(document.getElementById('edit_' + prefix + '_unit').value) || 0;
+        var unitPrice = parseFloat(document.getElementById('edit_' + prefix + '_unit_price').value) || 0;
+        if (unit > 0 && unitPrice > 0) {
+            amountEl.value = (unit * unitPrice).toFixed(2);
+        }
     }
 
     function editAmountChange() {

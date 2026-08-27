@@ -3,6 +3,7 @@ from typing import Any
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from sqlalchemy import select, delete, false
+from sqlalchemy.orm import selectinload
 from app import db
 from app.models import (Transaction, Account, Category, Owner, TransactionStatus,
                          AccountBalance, TimeDeposit, DepositStatus)
@@ -50,6 +51,43 @@ def _fund_unit_kwargs(unit, unit_price):
         'trans_unit_price': unit_price,
         'trans_unit_name': None,
     }
+
+
+def _apply_side_units(txn, account, amount, prefix):
+    """转账编辑：保存单侧（转出/转入）单位与单价，返回错误提示或 None
+
+    prefix 为 'out'/'in'，分别对应表单 out_unit / in_unit。
+    仅对有单位概念账户生效；单位 × 单价 = 账户默认货币金额（HKD 账户强校验）。
+    """
+    unit = request.form.get(f'{prefix}_unit', type=float)
+    unit_price = request.form.get(f'{prefix}_unit_price', type=float)
+    if not account or not account.account_has_unit_ind:
+        txn.trans_unit = None
+        txn.trans_unit_price = None
+        txn.trans_unit_name = None
+        return None
+
+    has_unit = unit is not None
+    has_up = unit_price is not None
+    if has_unit and has_up:
+        amount_from_units = round(unit * unit_price, 2)
+        if account.account_currency_name == 'HKD' and abs(amount - amount_from_units) > 0.02:
+            return f'单位×单价 ({unit} × {unit_price} ≈ {amount_from_units}) 与金额 ({amount}) 不符'
+    elif has_unit:
+        unit_price = round(amount / unit, 6)
+    elif has_up:
+        unit = round(amount / unit_price, 6)
+
+    if unit is not None and unit_price is not None:
+        sign = -1 if prefix == 'out' else 1
+        txn.trans_unit = sign * unit
+        txn.trans_unit_price = unit_price
+        txn.trans_unit_name = None
+    else:
+        txn.trans_unit = None
+        txn.trans_unit_price = None
+        txn.trans_unit_name = None
+    return None
 
 
 def get_user_owner():
@@ -168,6 +206,7 @@ def dashboard():
     stmt = get_visible_transactions_query(
         start, end, status_filter, category_id, account_id
     )
+    stmt = stmt.options(selectinload(Transaction.counter_transaction))
     transactions_list = db.session.execute(stmt).scalars().all()
     
     total_income = sum(t.trans_amount for t in transactions_list if t.is_income())
@@ -649,14 +688,12 @@ def edit_transaction(trans_id):
         flash('无权编辑此交易')
         return _dashboard_redirect()
 
-    amount = request.form.get('amount', type=float)
     category_id = request.form.get('category_id', type=int)
-    account_id = request.form.get('account_id', type=int)
     description = request.form.get('description', '')
     trans_date = request.form.get('trans_date', '')
     trans_time = request.form.get('trans_time', '00:00')
 
-    if not account_id or not category_id or not amount:
+    if not category_id:
         flash('请填写完整信息')
         return _dashboard_redirect()
 
@@ -666,12 +703,20 @@ def edit_transaction(trans_id):
     old_datetime = transaction.trans_datetime
     old_counter_account_id = None
     old_counter_datetime = None
-
-    currency = request.form.get('currency', transaction.trans_currency_name)
-    has_fx = transaction.trans_fx_currency_name is not None
-    fx_rate_provided = request.form.get('fx_rate') is not None
+    txn_new_account_id = None
+    counter_new_account_id = None
 
     if not is_pair:
+        amount = request.form.get('amount', type=float)
+        account_id = request.form.get('account_id', type=int)
+        if not account_id or not amount:
+            flash('请填写完整信息')
+            return _dashboard_redirect()
+
+        currency = request.form.get('currency', transaction.trans_currency_name)
+        has_fx = transaction.trans_fx_currency_name is not None
+        fx_rate_provided = request.form.get('fx_rate') is not None
+
         sign = 1 if transaction.trans_amount > 0 else -1
         hkd_amount = amount
 
@@ -720,6 +765,7 @@ def edit_transaction(trans_id):
         transaction.trans_account_id = account_id
         transaction.trans_category_id = category_id
         transaction.trans_desc = description
+        txn_new_account_id = account_id
 
         account = db.session.get(Account, account_id)
         if account and not has_fx:
@@ -771,28 +817,54 @@ def edit_transaction(trans_id):
 
         counter = None
     else:
+        out_account_id = request.form.get('out_account_id', type=int)
+        out_amount = request.form.get('out_amount', type=float)
+        in_account_id = request.form.get('in_account_id', type=int)
+        in_amount = request.form.get('in_amount', type=float)
+        if not out_account_id or not in_account_id or not out_amount or not in_amount:
+            flash('请填写完整信息')
+            return _dashboard_redirect()
+        if out_amount <= 0 or in_amount <= 0:
+            flash('金额必须大于 0')
+            return _dashboard_redirect()
+
         counter = db.session.get(Transaction, transaction.trans_counter_id)
         if counter:
             old_counter_account_id = counter.trans_account_id
             old_counter_datetime = counter.trans_datetime
+
+        # 区分转出/转入两侧（转出为负金额，转入为正金额）
         if transaction.trans_amount < 0:
-            transaction.trans_amount = -amount
-            if counter:
-                counter.trans_amount = amount
-                counter.trans_account_id = account_id
+            out_txn, in_txn = transaction, counter
+            txn_new_account_id, counter_new_account_id = out_account_id, in_account_id
         else:
-            transaction.trans_amount = amount
-            if counter:
-                counter.trans_amount = -amount
-                counter.trans_account_id = account_id
-        
-        transaction.trans_account_id = account_id
+            in_txn, out_txn = transaction, counter
+            txn_new_account_id, counter_new_account_id = in_account_id, out_account_id
+
+        out_account = db.session.get(Account, out_account_id)
+        in_account = db.session.get(Account, in_account_id)
+
+        if out_txn:
+            out_txn.trans_account_id = out_account_id
+            out_txn.trans_amount = -round(out_amount, 2)
+            unit_err = _apply_side_units(out_txn, out_account, out_amount, 'out')
+            if unit_err:
+                flash(unit_err)
+                return _dashboard_redirect()
+        if in_txn:
+            in_txn.trans_account_id = in_account_id
+            in_txn.trans_amount = round(in_amount, 2)
+            unit_err = _apply_side_units(in_txn, in_account, in_amount, 'in')
+            if unit_err:
+                flash(unit_err)
+                return _dashboard_redirect()
+
         transaction.trans_category_id = category_id
         transaction.trans_desc = description
         if counter:
             counter.trans_category_id = category_id
             counter.trans_desc = description
-    
+
     new_datetime = old_datetime
     try:
         new_datetime = datetime.strptime(
@@ -806,17 +878,14 @@ def edit_transaction(trans_id):
     
     earliest_dt = old_datetime if _ensure_utc(old_datetime) < _ensure_utc(new_datetime) else new_datetime
     
+    # 余额缓存失效
     invalidate_account_balances(old_account_id, earliest_dt)
-    if account_id != old_account_id:
-        invalidate_account_balances(account_id, earliest_dt)
-    
+    if txn_new_account_id and txn_new_account_id != old_account_id:
+        invalidate_account_balances(txn_new_account_id, earliest_dt)
     if is_pair and counter:
+        invalidate_account_balances(counter_new_account_id, earliest_dt)
         if old_counter_account_id:
             invalidate_account_balances(old_counter_account_id, earliest_dt)
-            if counter.trans_account_id != old_counter_account_id:
-                invalidate_account_balances(counter.trans_account_id, earliest_dt)
-        else:
-            invalidate_account_balances(counter.trans_account_id, earliest_dt)
     
     db.session.commit()
     flash('交易更新成功')
