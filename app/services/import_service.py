@@ -6,10 +6,11 @@ from app import db
 from app.models import (
     Account, Category, Transaction, Owner, Family,
     AccountType, CategoryType, TransactionStatus,
-    BluecoinsAccountMapping, BluecoinsCategoryMapping
+    BluecoinsAccountMapping, BluecoinsCategoryMapping,
+    AccountBalance
 )
 from app.routes.accounts import get_fx_rate_to_hkd
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 
 
 class ImportService:
@@ -34,6 +35,14 @@ class ImportService:
         self.skipped_transactions = []
         self.new_account_mappings = {}
         self.new_category_mappings = {}
+        self._affected_accounts = set()
+
+    def _invalidate_account_balances(self, account_ids):
+        """清除受影响账户的日终余额缓存（导入会新增/修改交易，须使缓存失效）"""
+        if not account_ids:
+            return
+        stmt = delete(AccountBalance).where(AccountBalance.account_id.in_(account_ids))
+        db.session.execute(stmt)
     
     def _load_existing_mappings(self):
         """加载已存在的 Bluecoins 映射"""
@@ -503,6 +512,8 @@ class ImportService:
         
         if not dry_run:
             db.session.commit()
+            self._invalidate_account_balances(self._affected_accounts)
+            db.session.commit()
         return self.results['transactions']
 
     def _visible_owner_ids(self):
@@ -684,6 +695,9 @@ class ImportService:
                         continue
                     raise ValueError(f'无法匹配银行账户: {bank}')
 
+                self._affected_accounts.add(fund_account.account_id)
+                self._affected_accounts.add(bank_account.account_id)
+
                 trans_datetime = self._parse_datetime(purchase_date, '')
 
                 # 去重：同基金账户同日同金额（及同单位）已有交易则跳过
@@ -752,6 +766,8 @@ class ImportService:
                     'reason': str(e),
                 })
 
+        db.session.commit()
+        self._invalidate_account_balances(self._affected_accounts)
         db.session.commit()
         return result
 
@@ -864,6 +880,7 @@ class ImportService:
                 'reason': f'无法匹配账户: {bc_account}', 'title': title
             })
             return 'skipped'
+        self._affected_accounts.add(account_id)
         
         if bc_type == '转账':
             category_id = self._get_transfer_category_id()
@@ -967,6 +984,8 @@ class ImportService:
         
         if not account_id or not pair_account_id:
             return 'skipped'
+        self._affected_accounts.add(account_id)
+        self._affected_accounts.add(pair_account_id)
         
         if amount < 0:
             out_account_id = account_id

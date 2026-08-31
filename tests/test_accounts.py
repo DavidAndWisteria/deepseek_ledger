@@ -1,6 +1,6 @@
 import pytest
 from app import db
-from app.models import Account, AccountType, Owner
+from app.models import Account, AccountType, Owner, Category
 from sqlalchemy import select
 
 
@@ -116,3 +116,74 @@ class TestAccountRoutes:
     def test_accounts_unauthenticated(self, client):
         response = client.get('/accounts', follow_redirects=True)
         assert '登录' in response.data.decode('utf-8')
+
+
+class TestBalanceSheetTransfer:
+    """资产负债表与交易页应包含转账交易"""
+
+    def test_balance_includes_transfer_and_dashboard_shows_transfer(self, app, logged_in_client, test_owner):
+        from datetime import date, timedelta, datetime, timezone
+        from app.models import Transaction, TransactionStatus, CategoryType
+
+        today = date.today()
+        with app.app_context():
+            bank = Account(
+                account_name='银行户口', account_type=AccountType.SAVING,
+                account_custodian='测试银行', account_currency_name='HKD',
+                account_owner_id=test_owner, account_create_date=today - timedelta(days=60),
+            )
+            fund = Account(
+                account_name='基金户口', account_type=AccountType.FUND,
+                account_custodian='测试基金', account_currency_name='HKD',
+                account_owner_id=test_owner, account_has_unit_ind=True,
+                account_create_date=today - timedelta(days=60),
+            )
+            db.session.add_all([bank, fund])
+            db.session.flush()
+            transfer_cat = db.session.scalars(
+                select(Category).where(Category.category_type == CategoryType.TRANSFER)
+            ).first()
+            if not transfer_cat:
+                transfer_cat = Category(category_name='账户转账', category_class='转账',
+                                        category_subclass='转账', category_type=CategoryType.TRANSFER)
+                db.session.add(transfer_cat)
+                db.session.flush()
+            dt = datetime(today.year, today.month, today.day, 10, 0, tzinfo=timezone.utc)
+            out_t = Transaction(trans_datetime=dt, trans_desc='转出: 买入基金',
+                                trans_amount=-5000, trans_currency_name='HKD',
+                                trans_account_id=bank.account_id,
+                                trans_category_id=transfer_cat.category_id,
+                                trans_owner_id=test_owner,
+                                trans_status=TransactionStatus.UNVERIFIED)
+            db.session.add(out_t)
+            db.session.flush()
+            in_t = Transaction(trans_datetime=dt, trans_desc='转入: 买入基金',
+                               trans_amount=5000, trans_currency_name='HKD',
+                               trans_account_id=fund.account_id,
+                               trans_category_id=transfer_cat.category_id,
+                               trans_owner_id=test_owner,
+                               trans_status=TransactionStatus.UNVERIFIED,
+                               trans_counter_id=out_t.trans_id,
+                               trans_unit=50, trans_unit_price=100)
+            db.session.add(in_t)
+            db.session.flush()
+            out_t.trans_counter_id = in_t.trans_id
+            db.session.commit()
+            fund_id = fund.account_id
+            bank_id = bank.account_id
+
+        start = (today - timedelta(days=30)).strftime('%Y-%m-%d')
+        end = today.strftime('%Y-%m-%d')
+
+        resp = logged_in_client.get(f'/accounts?tab=finance&start_date={start}&end_date={end}')
+        assert resp.status_code == 200
+        text = resp.get_data(as_text=True)
+        assert f'data-id="{fund_id}"' in text, 'fund should appear in balance sheet'
+        assert f'data-id="{bank_id}"' in text, 'bank should appear in balance sheet'
+
+        resp2 = logged_in_client.get(
+            f'/?account_id={fund_id}&start_date={start}&end_date={end}&from_accounts=1&tab=list-tab')
+        assert resp2.status_code == 200
+        text2 = resp2.get_data(as_text=True)
+        assert '转入: 买入基金' in text2, 'fund transfer-in transaction should show on dashboard'
+        assert '转账' in text2, 'transfer badge should be present'

@@ -253,6 +253,12 @@ def compute_balance_sheet(accounts_list, start_date, end_date):
             'balance_end': hkd_end,
             'change': hkd_change,
             'is_closed': account.account_close_date is not None,
+            'has_unit': account.account_has_unit_ind,
+            'other_name': account.account_other_name,
+            'owner_id': account.account_owner_id,
+            'create_date': account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '',
+            'close_date': account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '',
+            'isin': account.account_isin,
             '_raw_start': balance_start,
             '_raw_end': balance_end,
             '_has_fx_start': bool(balance_start_record and balance_start_record.account_fx_currency_name),
@@ -365,8 +371,7 @@ def list_accounts():
         currency_breakdown[a.account_currency_name] += 1
         owner_breakdown[a.owner.owner_name] += 1
 
-    # 资产负债表数据（仅活跃账户）
-    active_accounts_list = [a for a in accounts_list if not a.account_close_date]
+    # 资产负债表数据：显示与所选时间范围有重合的账户（含已关闭但期间内处于开启状态的账户）
     today = datetime.now(timezone.utc).date()
     first_of_month = today.replace(day=1)
     start_str = request.args.get('start_date', '') or session.get('accts_start_date', '')
@@ -377,17 +382,21 @@ def list_accounts():
             end_date = datetime.strptime(end_str, '%Y-%m-%d').date() if end_str else today
             if end_date < start_date:
                 start_date, end_date = end_date, start_date
-            balance_sheet = compute_balance_sheet(active_accounts_list, start_date, end_date)
         except ValueError:
             start_date = first_of_month
             end_date = today
-            balance_sheet = compute_balance_sheet(active_accounts_list, start_date, end_date)
     else:
         start_date = first_of_month
         end_date = today
         start_str = start_date.strftime('%Y-%m-%d')
         end_str = end_date.strftime('%Y-%m-%d')
-        balance_sheet = compute_balance_sheet(active_accounts_list, start_date, end_date)
+
+    balance_sheet_accounts_list = [
+        a for a in accounts_list
+        if (not a.account_create_date or a.account_create_date <= end_date)
+        and (not a.account_close_date or a.account_close_date >= start_date)
+    ]
+    balance_sheet = compute_balance_sheet(balance_sheet_accounts_list, start_date, end_date)
 
     # Persist dates to session for cross-page navigation
     session['accts_start_date'] = start_date.strftime('%Y-%m-%d')
@@ -505,6 +514,7 @@ def edit_account(account_id):
     account.account_name = request.form.get('account_name', account.account_name).strip()
     account.account_other_name = request.form.get('account_other_name', '').strip() or None
     account.account_custodian = request.form.get('account_custodian', account.account_custodian).strip()
+    account.account_currency_name = request.form.get('account_currency_name', account.account_currency_name)
     account.account_has_unit_ind = request.form.get('account_has_unit_ind', '0') == '1'
     account.account_isin = (request.form.get('account_isin', '') or '').strip().upper() or None
 
@@ -536,7 +546,10 @@ def edit_account(account_id):
 
     db.session.commit()
     flash('账户更新成功')
-    return redirect(url_for('accounts.list_accounts', tab='accounts'))
+    target_tab = request.form.get('tab', 'accounts')
+    if target_tab not in ('finance', 'accounts'):
+        target_tab = 'accounts'
+    return redirect(url_for('accounts.list_accounts', tab=target_tab))
 
 
 @accounts.route('/accounts/<int:account_id>/check-delete')

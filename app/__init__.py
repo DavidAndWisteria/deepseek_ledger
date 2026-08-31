@@ -224,6 +224,12 @@ def create_app(test_config=None):
                     db.session.commit()
                     inspector.info_cache.clear()  # 清除缓存以刷新列信息
 
+            # 0.3.11: 清除日终余额缓存（历史版本导入交易未使缓存失效，可能导致余额不含转账交易）
+            # account_balance 为纯缓存表，清空后首次查看时自动按最新交易重算
+            if 'account_balance' in existing_tables:
+                db.session.execute(db.text('DELETE FROM account_balance'))
+                db.session.commit()
+
             # 检查每个模型表的结构
             for table_name, table in metadata.tables.items():
                 if table_name not in existing_tables:

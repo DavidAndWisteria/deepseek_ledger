@@ -104,6 +104,50 @@ class TestImportFundPurchase:
             assert trans_in2.trans_unit == 3904.382
             assert trans_in2.trans_unit_price == 12.81
 
+    def test_import_invalidates_stale_balance_cache(self, app, test_user, test_owner, logged_in_client):
+        """导入基金购买后应使日终余额缓存失效，余额包含转账交易（不再显示旧的 0 余额）"""
+        from datetime import date
+        from app.models import AccountBalance
+
+        with app.app_context():
+            fund = Account(
+                account_name='沪深300ETF', account_other_name='U44976',
+                account_type=AccountType.FUND, account_custodian='基金公司',
+                account_currency_name='HKD', account_owner_id=test_owner,
+                account_has_unit_ind=True, account_create_date=date(2019, 1, 1),
+            )
+            _create_bank_account(app, test_owner)
+            db.session.add(fund)
+            db.session.commit()
+            fund_id = fund.account_id
+
+        # 1) 先查看资产负债表 → 生成 0 余额缓存（模拟导入前已缓存）
+        resp = logged_in_client.get('/accounts?tab=finance&start_date=2020-01-01&end_date=2020-12-31')
+        assert resp.status_code == 200
+        with app.app_context():
+            cached = db.session.scalars(
+                select(AccountBalance).where(AccountBalance.account_id == fund_id)
+            ).all()
+            assert cached, 'cache should have been created'
+            assert all(r.account_balance == 0 for r in cached)
+
+        # 2) 导入基金购买 → 生成转账交易，缓存应被清除
+        service = self._service(app, test_user)
+        with app.app_context():
+            result = service.import_fund_purchases_csv(FUND_CSV)
+        assert result['success'] == 1
+
+        # 3) 再次查看资产负债表 → 缓存重算，余额包含转账
+        resp = logged_in_client.get('/accounts?tab=finance&start_date=2020-01-01&end_date=2020-12-31')
+        assert resp.status_code == 200
+        with app.app_context():
+            cached = db.session.scalars(
+                select(AccountBalance).where(AccountBalance.account_id == fund_id)
+            ).all()
+            assert cached, 'cache should exist after re-view'
+            assert any(r.account_balance == 199999.13 for r in cached), \
+                f'fund balance should be 199999.13, got {[r.account_balance for r in cached]}'
+
     def test_import_fund_purchase_no_unit(self, app, test_user, test_owner):
         """无份额/单价 → 转账正常生成，不记录单位"""
         fund_id = _create_fund_account(app, test_owner)

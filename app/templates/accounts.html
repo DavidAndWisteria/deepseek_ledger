@@ -192,13 +192,16 @@
                         {% for item in items %}
                         <tr class="bs-detail" style="display: none; background: #fafafa;">
                             <td style="padding-left: 28px;">
-                                {% if item.currency != 'HKD' %}
+                                {% if item.currency != 'HKD' or item.has_unit %}
                                 <span class="bs-toggle" style="font-size: 10px; color: #888; cursor: pointer; margin-right: 2px;"
                                       onclick="event.stopPropagation(); toggleFxDetails(this.closest('tr'))">▶</span>
                                 {% endif %}
                                 <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
                                 <span style="font-size: 13px;">{{ item.name }}</span>
                                 <span style="color: #999;">({{ item.currency }})</span>
+                                {% if item.is_closed %}
+                                <span class="badge" style="background: #fadbd8; color: #e74c3c;">已关闭</span>
+                                {% endif %}
                             </td>
                             <td style="text-align: right;">
                                 <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
@@ -234,14 +237,37 @@
                                 </span>
                             </td>
                             <td style="text-align: center;">
-                                <a href="{{ url_for('transactions.dashboard', account_id=item.id, start_date=start_date, end_date=end_date, from_accounts=1, tab='list-tab') }}" class="btn" style="background: #d4e6f1; color: #2980b9; padding: 3px 10px; font-size: 11px; border-radius: 4px; text-decoration: none; white-space: nowrap;">详情</a>
+                                <div style="display: flex; flex-direction: column; gap: 4px; align-items: center;">
+                                    <a href="{{ url_for('transactions.dashboard', account_id=item.id, start_date=start_date, end_date=end_date, from_accounts=1, tab='list-tab') }}" class="btn" style="background: #d4e6f1; color: #2980b9; padding: 3px 10px; font-size: 11px; border-radius: 4px; text-decoration: none; white-space: nowrap;">交易详情</a>
+                                    <button onclick="openAccountDetailModal(this)"
+                                            data-id="{{ item.id }}"
+                                            data-name="{{ item.name }}"
+                                            data-other="{{ item.other_name or '' }}"
+                                            data-custodian="{{ item.custodian }}"
+                                            data-type="{{ item.type }}"
+                                            data-currency="{{ item.currency }}"
+                                            data-owner="{{ item.owner }}"
+                                            data-ownerid="{{ item.owner_id }}"
+                                            data-createdate="{{ item.create_date or '' }}"
+                                            data-closedate="{{ item.close_date or '' }}"
+                                            data-hasunit="{{ item.has_unit }}"
+                                            data-isin="{{ item.isin or '' }}"
+                                            class="btn" style="background: #eadcf8; color: #8e44ad; padding: 3px 10px; font-size: 11px; border-radius: 4px; white-space: nowrap; cursor: pointer;">账户详情</button>
+                                </div>
                             </td>
                         </tr>
-                        {% if item.currency != 'HKD' %}
+                        {% if item.currency != 'HKD' or item.has_unit %}
                         <tr class="fx-detail" style="display: none; background: #fafafa;">
                             <td style="padding-left: 32px; font-size: 11px; color: #666; padding-top: 0; padding-bottom: 8px;" colspan="7">
                                 持仓单位: {{ (item._deposit_unit_start or 0)|amt }} / {{ (item._deposit_unit_end or 0)|amt }}
+                                {% if item.has_unit %}
+                                &nbsp;|&nbsp; 持仓单位成本: {{ (item._account_fx_cost_rate_start or 0)|amt(4) }} / {{ (item._account_fx_cost_rate_end or 0)|amt(4) }}
+                                {% endif %}
+                                {% if item.has_unit and item.currency != 'HKD' %}
+                                &nbsp;|&nbsp; 持仓汇率成本: {{ (item._account_fx_cost_rate_start or 0)|amt(4) }} / {{ (item._account_fx_cost_rate_end or 0)|amt(4) }}
+                                {% elif item.currency != 'HKD' %}
                                 &nbsp;|&nbsp; 成本汇率: {{ (item._account_fx_cost_rate_start or 0)|amt(4) }} / {{ (item._account_fx_cost_rate_end or 0)|amt(4) }}
+                                {% endif %}
                             </td>
                         </tr>
                         {% endif %}
@@ -348,13 +374,16 @@
                         {% for item in items %}
                         <tr class="bs-detail" style="display: none; background: #fafafa;">
                             <td style="padding-left: 28px;">
-                                {% if item.currency != 'HKD' %}
+                                {% if item.currency != 'HKD' or item.has_unit %}
                                 <span class="bs-toggle" style="font-size: 10px; color: #888; cursor: pointer; margin-right: 2px;"
                                       onclick="event.stopPropagation(); toggleFxDetails(this.closest('tr'))">▶</span>
                                 {% endif %}
                                 <span style="font-size: 11px; color: #aaa;">{{ item.owner }} · {{ item.custodian }}</span>
                                 <span style="font-size: 13px;">{{ item.name }}</span>
                                 <span style="color: #999;">({{ item.currency }})</span>
+                                {% if item.is_closed %}
+                                <span class="badge" style="background: #fadbd8; color: #e74c3c;">已关闭</span>
+                                {% endif %}
                             </td>
                             <td style="text-align: right;">
                                 <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;">
@@ -390,14 +419,37 @@
                                 </span>
                             </td>
                             <td style="text-align: center;">
-                                <a href="{{ url_for('transactions.dashboard', account_id=item.id, start_date=start_date, end_date=end_date, from_accounts=1, tab='list-tab') }}" class="btn" style="background: #d4e6f1; color: #2980b9; padding: 3px 10px; font-size: 11px; border-radius: 4px; text-decoration: none; white-space: nowrap;">详情</a>
+                                <div style="display: flex; flex-direction: column; gap: 4px; align-items: center;">
+                                    <a href="{{ url_for('transactions.dashboard', account_id=item.id, start_date=start_date, end_date=end_date, from_accounts=1, tab='list-tab') }}" class="btn" style="background: #d4e6f1; color: #2980b9; padding: 3px 10px; font-size: 11px; border-radius: 4px; text-decoration: none; white-space: nowrap;">交易详情</a>
+                                    <button onclick="openAccountDetailModal(this)"
+                                            data-id="{{ item.id }}"
+                                            data-name="{{ item.name }}"
+                                            data-other="{{ item.other_name or '' }}"
+                                            data-custodian="{{ item.custodian }}"
+                                            data-type="{{ item.type }}"
+                                            data-currency="{{ item.currency }}"
+                                            data-owner="{{ item.owner }}"
+                                            data-ownerid="{{ item.owner_id }}"
+                                            data-createdate="{{ item.create_date or '' }}"
+                                            data-closedate="{{ item.close_date or '' }}"
+                                            data-hasunit="{{ item.has_unit }}"
+                                            data-isin="{{ item.isin or '' }}"
+                                            class="btn" style="background: #eadcf8; color: #8e44ad; padding: 3px 10px; font-size: 11px; border-radius: 4px; white-space: nowrap; cursor: pointer;">账户详情</button>
+                                </div>
                             </td>
                         </tr>
-                        {% if item.currency != 'HKD' %}
+                        {% if item.currency != 'HKD' or item.has_unit %}
                         <tr class="fx-detail" style="display: none; background: #fafafa;">
                             <td style="padding-left: 32px; font-size: 11px; color: #666; padding-top: 0; padding-bottom: 8px;" colspan="7">
                                 持仓单位: {{ (item._deposit_unit_start or 0)|amt }} / {{ (item._deposit_unit_end or 0)|amt }}
+                                {% if item.has_unit %}
+                                &nbsp;|&nbsp; 持仓单位成本: {{ (item._account_fx_cost_rate_start or 0)|amt(4) }} / {{ (item._account_fx_cost_rate_end or 0)|amt(4) }}
+                                {% endif %}
+                                {% if item.has_unit and item.currency != 'HKD' %}
+                                &nbsp;|&nbsp; 持仓汇率成本: {{ (item._account_fx_cost_rate_start or 0)|amt(4) }} / {{ (item._account_fx_cost_rate_end or 0)|amt(4) }}
+                                {% elif item.currency != 'HKD' %}
                                 &nbsp;|&nbsp; 成本汇率: {{ (item._account_fx_cost_rate_start or 0)|amt(4) }} / {{ (item._account_fx_cost_rate_end or 0)|amt(4) }}
+                                {% endif %}
                             </td>
                         </tr>
                         {% endif %}
@@ -604,6 +656,7 @@
                                     data-name="{{ account.account_name }}"
                                     data-other="{{ account.account_other_name or '' }}"
                                     data-custodian="{{ account.account_custodian }}"
+                                    data-currency="{{ account.account_currency_name }}"
                                     data-createdate="{{ account.account_create_date.strftime('%Y-%m-%d') if account.account_create_date else '' }}"
                                     data-closedate="{{ account.account_close_date.strftime('%Y-%m-%d') if account.account_close_date else '' }}"
                                     data-ownerid="{{ account.account_owner_id }}"
@@ -626,75 +679,6 @@
         {% endif %}
     </div>
 
-    <!-- 编辑账户弹窗 -->
-    <div id="edit-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
-        <div class="card" style="max-width: 550px; width: 90%;">
-            <h3>✏️ 编辑账户</h3>
-            <form id="edit-form" method="POST">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>账户名称</label>
-                        <input type="text" id="edit-name" name="account_name" required>
-                    </div>
-                    <div class="form-group">
-                        <label>别名</label>
-                        <input type="text" id="edit-other" name="account_other_name">
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>机构/钱包</label>
-                    <input type="text" id="edit-custodian" name="account_custodian" required>
-                </div>
-                
-                <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="edit-has-unit-ind" name="account_has_unit_ind" value="1">
-                        有单位概念<span style="font-weight: normal; color: #999;">(按单位/单价记账，如基金份额)</span>
-                    </label>
-                </div>
-                
-                <div class="form-group">
-                    <label>ISIN 代码</label>
-                    <input type="text" id="edit-isin" name="account_isin" maxlength="12" style="text-transform: uppercase;" placeholder="例如：HK0000064689">
-                    <small style="color: #aaa;">基金等有价证券的唯一标识（可选）</small>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>创建日期</label>
-                        <input type="date" id="edit-create-date" name="account_create_date">
-                    </div>
-                    <div class="form-group">
-                        <label>关闭日期</label>
-                        <input type="date" id="edit-close-date" name="account_close_date">
-                    </div>
-                </div>
-                
-                {% if current_user.is_adult() %}
-                <div class="form-group">
-                    <label>账户拥有者</label>
-                    <select id="edit-owner-id" name="account_owner_id">
-                        {% for member in members %}
-                        <option value="{{ member.owner_id }}">
-                            {{ member.owner_name }}
-                            {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                {% endif %}
-                
-                <div style="display: flex; gap: 12px; margin-top: 16px;">
-                    <button type="submit" class="btn btn-primary">💾 保存</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <!-- 删除账户确认弹窗 -->
     <div id="delete-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1001; justify-content: center; align-items: center;">
         <div class="card" style="max-width: 550px; width: 90%;">
@@ -706,6 +690,101 @@
     </div>
 </div>
 
+<!-- 账户详情预览弹窗 -->
+<div id="account-detail-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; justify-content: center; align-items: center;">
+    <div class="card" style="max-width: 500px; width: 90%;">
+        <h3>🏦 账户详情</h3>
+        <div id="account-detail-content" style="line-height: 2; font-size: 14px;"></div>
+        <div id="account-detail-actions" style="display: flex; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee;"></div>
+        <button type="button" class="btn btn-secondary" style="width: 100%; margin-top: 12px;" onclick="closeAccountDetailModal()">关闭</button>
+    </div>
+</div>
+
+<!-- 编辑账户弹窗 -->
+<div id="edit-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div class="card" style="max-width: 550px; width: 90%;">
+        <h3>✏️ 编辑账户</h3>
+        <form id="edit-form" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" id="edit-tab" name="tab" value="accounts">
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>账户名称</label>
+                    <input type="text" id="edit-name" name="account_name" required>
+                </div>
+                <div class="form-group">
+                    <label>别名</label>
+                    <input type="text" id="edit-other" name="account_other_name">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>机构/钱包</label>
+                <input type="text" id="edit-custodian" name="account_custodian" required>
+            </div>
+
+            <div class="form-group">
+                <label>基础货币</label>
+                <select id="edit-currency" name="account_currency_name">
+                    <option value="HKD">HKD - 港币</option>
+                    <option value="USD">USD - 美元</option>
+                    <option value="CNY">CNY - 人民币</option>
+                    <option value="JPY">JPY - 日元</option>
+                    <option value="GBP">GBP - 英镑</option>
+                    <option value="EUR">EUR - 欧元</option>
+                    <option value="AUD">AUD - 澳元</option>
+                    <option value="SGD">SGD - 新加坡元</option>
+                </select>
+                <small style="color: #aaa;">账户计价货币，修改后相关折算以新货币计算</small>
+            </div>
+            
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="edit-has-unit-ind" name="account_has_unit_ind" value="1">
+                    有单位概念<span style="font-weight: normal; color: #999;">(按单位/单价记账，如基金份额)</span>
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label>ISIN 代码</label>
+                <input type="text" id="edit-isin" name="account_isin" maxlength="12" style="text-transform: uppercase;" placeholder="例如：HK0000064689">
+                <small style="color: #aaa;">基金等有价证券的唯一标识（可选）</small>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>创建日期</label>
+                    <input type="date" id="edit-create-date" name="account_create_date">
+                </div>
+                <div class="form-group">
+                    <label>关闭日期</label>
+                    <input type="date" id="edit-close-date" name="account_close_date">
+                </div>
+            </div>
+            
+            {% if current_user.is_adult() %}
+            <div class="form-group">
+                <label>账户拥有者</label>
+                <select id="edit-owner-id" name="account_owner_id">
+                    {% for member in members %}
+                    <option value="{{ member.owner_id }}">
+                        {{ member.owner_name }}
+                        {% if not member.user %}(家庭共享){% elif member.user.is_adult() %}(成人){% else %}(小孩){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button type="submit" class="btn btn-primary">💾 保存</button>
+                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <style>
 .tab-btn.active {
     color: #1a1a2e !important;
@@ -714,6 +793,20 @@
 </style>
 
 <script>
+    function getExpandedTypes() {
+        try {
+            return JSON.parse(sessionStorage.getItem('accts_expanded_types') || '[]');
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function setExpandedTypes(types) {
+        try {
+            sessionStorage.setItem('accts_expanded_types', JSON.stringify(types));
+        } catch (e) {}
+    }
+
     function toggleBsDetails(row) {
         const toggle = row.querySelector('.bs-toggle');
         let next = row.nextElementSibling;
@@ -725,7 +818,35 @@
             }
             next = next.nextElementSibling;
         }
+
+        const typeName = row.querySelector('strong').textContent.trim();
+        let types = getExpandedTypes();
+        if (expanded) {
+            types = types.filter(t => t !== typeName);
+        } else if (!types.includes(typeName)) {
+            types.push(typeName);
+        }
+        setExpandedTypes(types);
     }
+
+    function restoreExpandedTypes() {
+        const types = getExpandedTypes();
+        if (!types.length) return;
+        document.querySelectorAll('.bs-type-row').forEach(row => {
+            const typeName = row.querySelector('strong').textContent.trim();
+            if (!types.includes(typeName)) return;
+            const toggle = row.querySelector('.bs-toggle');
+            toggle.textContent = '▼';
+            let next = row.nextElementSibling;
+            while (next && (next.classList.contains('bs-detail') || next.classList.contains('fx-detail'))) {
+                if (next.classList.contains('bs-detail')) {
+                    next.style.display = 'table-row';
+                }
+                next = next.nextElementSibling;
+            }
+        });
+    }
+    restoreExpandedTypes();
 
     function toggleFxDetails(row) {
         const toggle = row.querySelector('.bs-toggle');
@@ -763,16 +884,49 @@
     }
     syncUnitConceptDefault();
 
+    var accountDetailBtn = null;
+
+    function openAccountDetailModal(btn) {
+        accountDetailBtn = btn;
+        const d = btn.dataset;
+
+        var html = '<div><strong>类型:</strong> ' + d.type + '</div>';
+        html += '<div><strong>名称:</strong> ' + d.name + '</div>';
+        html += '<div><strong>别名:</strong> ' + (d.other || '无') + '</div>';
+        html += '<div><strong>机构/钱包:</strong> ' + d.custodian + '</div>';
+        html += '<div><strong>货币:</strong> ' + d.currency + '</div>';
+        html += '<div><strong>拥有者:</strong> ' + d.owner + '</div>';
+        html += '<div><strong>创建日期:</strong> ' + (d.createdate || '无') + '</div>';
+        html += '<div><strong>关闭日期:</strong> ' + (d.closedate || '无') + '</div>';
+        html += '<div><strong>状态:</strong> ' + (d.closedate ? '已关闭' : '使用中') + '</div>';
+        html += '<div><strong>单位概念:</strong> ' + (d.hasunit === 'True' ? '是' : '否') + '</div>';
+        if (d.isin) html += '<div><strong>ISIN:</strong> ' + d.isin + '</div>';
+
+        document.getElementById('account-detail-content').innerHTML = html;
+        document.getElementById('account-detail-actions').innerHTML =
+            '<button type="button" class="btn-action" style="background:#d4e6f1;color:#2980b9;" onclick="openEditModal(accountDetailBtn)">✏️ 编辑</button>';
+        document.getElementById('account-detail-modal').style.display = 'flex';
+    }
+
+    function closeAccountDetailModal() {
+        document.getElementById('account-detail-modal').style.display = 'none';
+        accountDetailBtn = null;
+    }
+
     function openEditModal(btn) {
         const id = btn.dataset.id;
         document.getElementById('edit-form').action = '/accounts/' + id + '/edit';
         document.getElementById('edit-name').value = btn.dataset.name;
         document.getElementById('edit-other').value = btn.dataset.other;
         document.getElementById('edit-custodian').value = btn.dataset.custodian;
+        document.getElementById('edit-currency').value = btn.dataset.currency;
         document.getElementById('edit-create-date').value = btn.dataset.createdate;
         document.getElementById('edit-close-date').value = btn.dataset.closedate;
         document.getElementById('edit-has-unit-ind').checked = btn.dataset.hasunit === 'True';
         document.getElementById('edit-isin').value = btn.dataset.isin;
+
+        const financeVisible = document.getElementById('tab-finance-panel').style.display !== 'none';
+        document.getElementById('edit-tab').value = financeVisible ? 'finance' : 'accounts';
         
         const ownerSelect = document.getElementById('edit-owner-id');
         if (ownerSelect) {
@@ -810,6 +964,9 @@
     }
     
     window.onclick = function(event) {
+        if (event.target == document.getElementById('account-detail-modal')) {
+            closeAccountDetailModal();
+        }
         if (event.target == document.getElementById('edit-modal')) {
             closeEditModal();
         }
@@ -817,5 +974,11 @@
             closeDeleteModal();
         }
     }
+
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            location.reload();
+        }
+    });
 </script>
 {% endblock %}
