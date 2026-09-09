@@ -107,7 +107,7 @@ GET /
 | status | string | 否 | 空(全部) | 交易状态筛选 |
 | category_id | int | 否 | 空(全部) | 分类筛选 |
 | account_id | int | 否 | 空(全部) | 账户筛选 |
-| tab | string | 否 | add-tab | 当前标签页 (add-tab/list-tab) |
+| tab | string | 否 | list-tab | 视图模式（list-tab，保留以兼容旧链接；添加交易已改为弹窗） |
 
 **status 可选值**:
 

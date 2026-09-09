@@ -246,6 +246,93 @@ class TestTransactionRoutes:
         response = logged_in_client.get(f'/?category_id={test_category}&tab=list-tab')
         assert response.status_code == 200
 
+    def test_dashboard_category_filter_clear_reverts(self, logged_in_client, app, test_owner, test_account, test_category):
+        """修改分类筛选为"全部分类"时不应复原为上一次的分类（v0.3.12 回归测试）"""
+        with app.app_context():
+            other_cat = Category(
+                category_name='交通',
+                category_class='日常生活',
+                category_subclass='出行',
+                category_type=CategoryType.EXPENSE
+            )
+            db.session.add(other_cat)
+            db.session.flush()
+
+            t1 = Transaction(
+                trans_datetime=datetime.now(timezone.utc),
+                trans_desc='分类A交易',
+                trans_amount=-111.00,
+                trans_account_id=test_account,
+                trans_category_id=test_category,
+                trans_owner_id=test_owner
+            )
+            t2 = Transaction(
+                trans_datetime=datetime.now(timezone.utc),
+                trans_desc='分类B交易',
+                trans_amount=-222.00,
+                trans_account_id=test_account,
+                trans_category_id=other_cat.category_id,
+                trans_owner_id=test_owner
+            )
+            db.session.add_all([t1, t2])
+            db.session.commit()
+
+        # 先按分类 A 筛选（写入 session 记忆）
+        resp = logged_in_client.get(f'/?category_id={test_category}&tab=list-tab')
+        assert resp.status_code == 200
+        assert '分类A交易' in resp.get_data(as_text=True)
+        assert '分类B交易' not in resp.get_data(as_text=True)
+
+        # 再把分类改回"全部分类"（category_id 为空）并筛选
+        resp2 = logged_in_client.get('/?category_id=&tab=list-tab')
+        assert resp2.status_code == 200
+        html2 = resp2.get_data(as_text=True)
+        assert '分类A交易' in html2
+        assert '分类B交易' in html2
+
+    def test_dashboard_account_filter_clear_reverts(self, logged_in_client, app, test_owner, test_account, test_category):
+        """账户筛选改回"全部账户"时不应复原为上一次的账户（v0.3.12 回归测试）"""
+        with app.app_context():
+            account2 = Account(
+                account_name='另一个账户',
+                account_type=AccountType.SAVING,
+                account_custodian='测试银行',
+                account_currency_name='HKD',
+                account_owner_id=test_owner
+            )
+            db.session.add(account2)
+            db.session.flush()
+
+            t1 = Transaction(
+                trans_datetime=datetime.now(timezone.utc),
+                trans_desc='账户1交易',
+                trans_amount=-333.00,
+                trans_account_id=test_account,
+                trans_category_id=test_category,
+                trans_owner_id=test_owner
+            )
+            t2 = Transaction(
+                trans_datetime=datetime.now(timezone.utc),
+                trans_desc='账户2交易',
+                trans_amount=-444.00,
+                trans_account_id=account2.account_id,
+                trans_category_id=test_category,
+                trans_owner_id=test_owner
+            )
+            db.session.add_all([t1, t2])
+            db.session.commit()
+
+        resp = logged_in_client.get(f'/?account_id={test_account}&tab=list-tab')
+        assert resp.status_code == 200
+        assert '账户1交易' in resp.get_data(as_text=True)
+        assert '账户2交易' not in resp.get_data(as_text=True)
+
+        resp2 = logged_in_client.get('/?account_id=&tab=list-tab')
+        assert resp2.status_code == 200
+        html2 = resp2.get_data(as_text=True)
+        assert '账户1交易' in html2
+        assert '账户2交易' in html2
+
     def test_dashboard_account_filter(self, logged_in_client, app, test_owner, test_account, test_category):
         """按账户筛选交易"""
         with app.app_context():
@@ -1084,3 +1171,316 @@ class TestFundTransactionRoutes:
         assert 'unit: 50' in html
         assert 'unitPrice: 20' in html
         assert '基金购买'.encode('utf-8') in resp.data
+
+    def test_dashboard_daily_subtotal_net(self, logged_in_client, app, test_owner, test_account, test_category):
+        """列表页每日小计栏显示当日总结余：收入-支出+转入-转出（含转账/特殊）"""
+        with app.app_context():
+            other = Account(
+                account_name='另一个账户', account_type=AccountType.SAVING,
+                account_custodian='测试券商', account_currency_name='HKD',
+                account_owner_id=test_owner
+            )
+            db.session.add(other)
+            db.session.flush()
+            other_id = other.account_id
+
+            income_cat = Category(
+                category_name='工资', category_class='收入',
+                category_subclass='薪酬', category_type=CategoryType.INCOME
+            )
+            transfer_cat = Category(
+                category_name='划转', category_class='资产变动',
+                category_subclass='内部划转', category_type=CategoryType.TRANSFER
+            )
+            db.session.add_all([income_cat, transfer_cat])
+            db.session.flush()
+
+            day = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
+            income = Transaction(
+                trans_datetime=day, trans_desc='工资收入', trans_amount=100.00,
+                trans_currency_name='HKD', trans_account_id=test_account,
+                trans_category_id=income_cat.category_id, trans_owner_id=test_owner
+            )
+            expense = Transaction(
+                trans_datetime=day, trans_desc='午饭', trans_amount=-30.00,
+                trans_currency_name='HKD', trans_account_id=test_account,
+                trans_category_id=test_category, trans_owner_id=test_owner
+            )
+            db.session.add_all([income, expense])
+            db.session.flush()
+            out = Transaction(
+                trans_datetime=day, trans_desc='转出: 划转', trans_amount=-50.00,
+                trans_currency_name='HKD', trans_account_id=test_account,
+                trans_category_id=transfer_cat.category_id, trans_owner_id=test_owner
+            )
+            inn = Transaction(
+                trans_datetime=day, trans_desc='转入: 划转', trans_amount=50.00,
+                trans_currency_name='HKD', trans_account_id=other_id,
+                trans_category_id=transfer_cat.category_id, trans_owner_id=test_owner
+            )
+            db.session.add_all([out, inn])
+            db.session.flush()
+            out.trans_counter_id = inn.trans_id
+            inn.trans_counter_id = out.trans_id
+            db.session.commit()
+
+        resp = logged_in_client.get('/?start_date=2026-06-15&end_date=2026-06-15&tab=list-tab')
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert '📥 收入: $100.00' in html
+        assert '📤 支出: $30.00' in html
+        # 总结余 = 100 - 30 - 50(转出) + 50(转入) = 70
+        assert '总结余: $70.00' in html
+
+    def test_dashboard_daily_subtotal_net_single_account(self, logged_in_client, app, test_owner, test_account, test_category):
+        """按单账户筛选时，转账仅计算该账户一侧：总结余应体现转出"""
+        with app.app_context():
+            other = Account(
+                account_name='另一个账户', account_type=AccountType.SAVING,
+                account_custodian='测试券商', account_currency_name='HKD',
+                account_owner_id=test_owner
+            )
+            db.session.add(other)
+            db.session.flush()
+            other_id = other.account_id
+
+            day = datetime(2026, 6, 16, 9, 0, tzinfo=timezone.utc)
+            income = Transaction(
+                trans_datetime=day, trans_desc='当日收入', trans_amount=200.00,
+                trans_currency_name='HKD', trans_account_id=test_account,
+                trans_category_id=test_category, trans_owner_id=test_owner
+            )
+            out = Transaction(
+                trans_datetime=day, trans_desc='转出: 划走', trans_amount=-80.00,
+                trans_currency_name='HKD', trans_account_id=test_account,
+                trans_category_id=test_category, trans_owner_id=test_owner
+            )
+            inn = Transaction(
+                trans_datetime=day, trans_desc='转入: 划走', trans_amount=80.00,
+                trans_currency_name='HKD', trans_account_id=other_id,
+                trans_category_id=test_category, trans_owner_id=test_owner
+            )
+            db.session.add_all([income, out, inn])
+            db.session.flush()
+            out.trans_counter_id = inn.trans_id
+            inn.trans_counter_id = out.trans_id
+            db.session.commit()
+
+        resp = logged_in_client.get(f'/?start_date=2026-06-16&end_date=2026-06-16&tab=list-tab&account_id={test_account}')
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        # 只显示 test_account 一侧：200 - 80(转出) = 120（另一账户的转入 +80 不在筛选内）
+        assert '总结余: $120.00' in html
+
+    def test_dashboard_daily_subtotal_fx_rerate(self, logged_in_client, app, test_owner, test_account, test_category):
+        """外币交易按“交易当日”汇率折算 HKD 计入每日小计与顶部卡片（不与录入时汇率混用）"""
+        with app.app_context():
+            day = datetime(2026, 6, 18, 12, 0, tzinfo=timezone.utc)
+            # USD 支出 100：录入时按 7.0 折算，trans_amount=-700、HKD 口径，但原始币金额/币种保留在 fx 字段
+            usd_expense = Transaction(
+                trans_datetime=day, trans_desc='USD支出', trans_amount=-700.00,
+                trans_currency_name='HKD', trans_fx_amount=-100.00,
+                trans_fx_currency_name='USD', trans_account_id=test_account,
+                trans_category_id=test_category, trans_owner_id=test_owner
+            )
+            # HKD 收入 50
+            income = Transaction(
+                trans_datetime=day, trans_desc='HKD收入', trans_amount=50.00,
+                trans_currency_name='HKD', trans_account_id=test_account,
+                trans_category_id=test_category, trans_owner_id=test_owner
+            )
+            db.session.add_all([usd_expense, income])
+            db.session.commit()
+
+        with patch('app.routes.transactions.get_fx_rate_to_hkd', return_value=7.8):
+            resp = logged_in_client.get('/?start_date=2026-06-18&end_date=2026-06-18&tab=list-tab')
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        # 当日汇率口径：支出=100*7.8=780，收入=50，净=-730（而非按录入 7.0 折算的 700）
+        assert '📥 收入: $50.00' in html
+        assert '📤 支出: $780.00' in html
+        assert '总结余: $-730.00' in html
+        # 顶部卡片同口径
+        assert '📤 总支出' in html
+        assert '$-730.00' in html  # 净收入卡片
+        assert html.count('$780.00') >= 2  # 顶部总支出 + 每日支出小计
+
+    def test_dashboard_daily_subtotal_fx_rate_unavailable_fallback(self, logged_in_client, app, test_owner, test_account, test_category):
+        """取不到当日汇率时回退到已存金额，避免外币被按 1.0 误算"""
+        with app.app_context():
+            day = datetime(2026, 6, 18, 12, 0, tzinfo=timezone.utc)
+            usd_expense = Transaction(
+                trans_datetime=day, trans_desc='USD支出', trans_amount=-700.00,
+                trans_currency_name='HKD', trans_fx_amount=-100.00,
+                trans_fx_currency_name='USD', trans_account_id=test_account,
+                trans_category_id=test_category, trans_owner_id=test_owner
+            )
+            db.session.add(usd_expense)
+            db.session.commit()
+
+        # get_fx_rate_to_hkd 失败时返回 1.0，_fx_day_rate 应识别为“取不到”并回退到已存 HKD 金额
+        with patch('app.routes.transactions.get_fx_rate_to_hkd', return_value=1.0):
+            resp = logged_in_client.get('/?start_date=2026-06-18&end_date=2026-06-18&tab=list-tab')
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert '📤 支出: $700.00' in html
+        assert '总结余: $-700.00' in html
+
+    def test_dashboard_daily_subtotal_fx_transfer(self, logged_in_client, app, test_owner, test_account, test_category):
+        """跨币种转账：两侧均按当日汇率折算后再计入结余，应相互抵消为 0（不再把原币直接相加）"""
+        with app.app_context():
+            other = Account(
+                account_name='USD账户', account_type=AccountType.SAVING,
+                account_custodian='券商', account_currency_name='USD',
+                account_owner_id=test_owner
+            )
+            db.session.add(other)
+            db.session.flush()
+            other_id = other.account_id
+
+            day = datetime(2026, 6, 18, 12, 0, tzinfo=timezone.utc)
+            out = Transaction(
+                trans_datetime=day, trans_desc='转出: 划转', trans_amount=-800.00,
+                trans_currency_name='HKD', trans_account_id=test_account,
+                trans_category_id=test_category, trans_owner_id=test_owner
+            )
+            inn = Transaction(
+                trans_datetime=day, trans_desc='转入: 划转', trans_amount=100.00,
+                trans_currency_name='USD', trans_account_id=other_id,
+                trans_category_id=test_category, trans_owner_id=test_owner
+            )
+            db.session.add_all([out, inn])
+            db.session.flush()
+            out.trans_counter_id = inn.trans_id
+            inn.trans_counter_id = out.trans_id
+            db.session.commit()
+
+        with patch('app.routes.transactions.get_fx_rate_to_hkd', return_value=8.0):
+            resp = logged_in_client.get('/?start_date=2026-06-18&end_date=2026-06-18&tab=list-tab')
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        # 转出 -800 HKD + 转入 100 USD × 8.0 = 800 HKD → 净变动为 0
+        assert '总结余: $0.00' in html
+
+    def test_dashboard_daily_subtotal_fx_fund_units(self, logged_in_client, app, test_owner, test_account, test_category):
+        """外币基金（份额×单价为原币）也按当日汇率折算计入支出/总结余"""
+        with app.app_context():
+            fund = Account(
+                account_name='USD基金', account_type=AccountType.FUND,
+                account_custodian='基金公司', account_currency_name='USD',
+                account_owner_id=test_owner, account_has_unit_ind=True
+            )
+            db.session.add(fund)
+            db.session.flush()
+            fund_id = fund.account_id
+
+            day = datetime(2026, 6, 18, 12, 0, tzinfo=timezone.utc)
+            # 录入当时折算：trans_amount=-8190 HKD；原币为 100 份 × 10.5 USD = -1050 USD
+            purchase = Transaction(
+                trans_datetime=day, trans_desc='买入USD基金', trans_amount=-8190.00,
+                trans_currency_name='HKD', trans_unit=-100.00, trans_unit_price=10.5,
+                trans_account_id=fund_id, trans_category_id=test_category,
+                trans_owner_id=test_owner
+            )
+            db.session.add(purchase)
+            db.session.commit()
+
+        with patch('app.routes.transactions.get_fx_rate_to_hkd', return_value=8.0):
+            resp = logged_in_client.get('/?start_date=2026-06-18&end_date=2026-06-18&tab=list-tab')
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        # -1050 USD × 8.0 = -8400 HKD（而非录入口径的 8190）
+        assert '📤 支出: $8,400.00' in html
+        assert '总结余: $-8,400.00' in html
+
+    def test_dashboard_multiselect_status(self, logged_in_client, app, test_owner, test_account, test_category):
+        """状态多选筛选：多个状态取并集，未选中的状态被排除"""
+        with app.app_context():
+            day = datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc)
+            rows = [
+                ('未核对A', -10001.00, TransactionStatus.UNVERIFIED),
+                ('已核对B', -20002.00, TransactionStatus.VERIFIED),
+                ('疑问C', -40004.00, TransactionStatus.FLAGGED),
+            ]
+            for desc, amt, st in rows:
+                db.session.add(Transaction(
+                    trans_datetime=day, trans_desc=desc, trans_amount=amt,
+                    trans_currency_name='HKD', trans_account_id=test_account,
+                    trans_category_id=test_category, trans_owner_id=test_owner,
+                    trans_status=st
+                ))
+            db.session.commit()
+
+        resp = logged_in_client.get(
+            '/?start_date=2026-09-05&end_date=2026-09-05&tab=list-tab&status=UNVERIFIED&status=VERIFIED'
+        )
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert '-10,001.00' in html
+        assert '-20,002.00' in html
+        assert '-40,004.00' not in html
+
+    def test_dashboard_multiselect_category(self, logged_in_client, app, test_owner, test_account, test_category):
+        """分类多选筛选：多个分类取并集"""
+        with app.app_context():
+            cat_a = Category(category_name='餐饮A', category_class='日常生活', category_subclass='饮食', category_type=CategoryType.EXPENSE)
+            cat_b = Category(category_name='交通B', category_class='日常生活', category_subclass='出行', category_type=CategoryType.EXPENSE)
+            cat_c = Category(category_name='购物C', category_class='日常生活', category_subclass='购物', category_type=CategoryType.EXPENSE)
+            db.session.add_all([cat_a, cat_b, cat_c])
+            db.session.flush()
+
+            day = datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc)
+            specs = [
+                (-11001.00, cat_a.category_id),
+                (-22002.00, cat_b.category_id),
+                (-55005.00, cat_c.category_id),
+            ]
+            for amt, cid in specs:
+                db.session.add(Transaction(
+                    trans_datetime=day, trans_desc='多分类', trans_amount=amt,
+                    trans_currency_name='HKD', trans_account_id=test_account,
+                    trans_category_id=cid, trans_owner_id=test_owner
+                ))
+            db.session.commit()
+            cid_a, cid_b, cid_c = cat_a.category_id, cat_b.category_id, cat_c.category_id
+
+        resp = logged_in_client.get(
+            f'/?start_date=2026-09-05&end_date=2026-09-05&tab=list-tab&category_id={cid_a}&category_id={cid_b}'
+        )
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert '-11,001.00' in html
+        assert '-22,002.00' in html
+        assert '-55,005.00' not in html
+
+    def test_dashboard_multiselect_account(self, logged_in_client, app, test_owner, test_account, test_category):
+        """账户多选筛选：多个账户取并集"""
+        with app.app_context():
+            acc_b = Account(account_name='账户B', account_type=AccountType.SAVING, account_custodian='银行', account_currency_name='HKD', account_owner_id=test_owner)
+            acc_c = Account(account_name='账户C', account_type=AccountType.SAVING, account_custodian='银行', account_currency_name='HKD', account_owner_id=test_owner)
+            db.session.add_all([acc_b, acc_c])
+            db.session.flush()
+
+            day = datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc)
+            specs = [
+                (-12001.00, test_account),
+                (-23002.00, acc_b.account_id),
+                (-66006.00, acc_c.account_id),
+            ]
+            for amt, aid in specs:
+                db.session.add(Transaction(
+                    trans_datetime=day, trans_desc='多账户', trans_amount=amt,
+                    trans_currency_name='HKD', trans_account_id=aid,
+                    trans_category_id=test_category, trans_owner_id=test_owner
+                ))
+            db.session.commit()
+            bid, cid = acc_b.account_id, acc_c.account_id
+
+        resp = logged_in_client.get(
+            f'/?start_date=2026-09-05&end_date=2026-09-05&tab=list-tab&account_id={test_account}&account_id={bid}'
+        )
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert '-12,001.00' in html
+        assert '-23,002.00' in html
+        assert '-66,006.00' not in html

@@ -34,6 +34,60 @@ def _ensure_utc(dt):
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 
+def _fx_day_rate(currency, target_date, cache):
+    """返回 currency 在 target_date 的 HKD 汇率（HKD per 1 外币），失败时返回 None（调用方回退）。
+
+    get_fx_rate_to_hkd 在取不到汇率时返回 1.0 且不写入缓存；真实汇率恰好为 1.0 与 HKD 之外货币几乎不可能，故以此作为“取不到”的判据。
+    """
+    if currency == 'HKD':
+        return 1.0
+    key = (currency, target_date)
+    if key in cache:
+        return cache[key]
+    rate = get_fx_rate_to_hkd(currency, target_date)
+    if rate == 1.0:
+        rate = None
+    cache[key] = rate
+    return rate
+
+
+def _transaction_hkd_value(t, cache, account_currencies=None):
+    """按“交易当日”汇率把外币原币金额折算成 HKD 的有符号金额，供汇总统计使用。
+
+    外币原币金额的三种来源：
+    1) 普通外币收支/特殊：is_fx，原币金额在 trans_fx_amount，币种为 trans_fx_currency_name；
+    2) 外币基金（账户币种非 HKD、含份额/单价）：原币金额 = trans_unit × trans_unit_price，
+       币种取账户币种（此时 trans_amount 只是录入当时折算的 HKD）；
+    3) 转账两侧与其余 HKD 交易：金额以 trans_amount 计、币种为 trans_currency_name。
+
+    trans_amount 一律视为“录入当时”的 HKD（普通外币收支/特殊及外币基金）；仅在当日汇率取不到时
+    回退到已存 trans_amount，避免把外币按 1.0 误算为 HKD。
+    """
+    date = t.trans_datetime.date()
+    if t.trans_fx_currency_name is not None and t.trans_fx_amount is not None:
+        amount = t.trans_fx_amount or 0.0
+        currency = t.trans_fx_currency_name
+    else:
+        amount = t.trans_amount or 0.0
+        currency = t.trans_currency_name or 'HKD'
+        # 外币基金：账户币种非 HKD 且含单位/单价 → 份额×单价才是该笔的原币金额
+        if (
+            currency == 'HKD'
+            and t.trans_unit is not None
+            and t.trans_unit_price is not None
+            and account_currencies
+            and account_currencies.get(t.trans_account_id) not in (None, 'HKD')
+        ):
+            amount = (t.trans_unit or 0.0) * (t.trans_unit_price or 0.0)
+            currency = account_currencies[t.trans_account_id]
+    if currency == 'HKD':
+        return amount
+    rate = _fx_day_rate(currency, date, cache)
+    if rate is None:
+        return t.trans_amount or 0.0
+    return amount * rate
+
+
 def _fx_unit_kwargs(currency, amount, stored_fx_rate):
     """外汇字段：trans_fx_amount 存外汇金额，trans_fx_rate 存汇率，trans_fx_currency_name 存外汇货币名"""
     return {
@@ -97,10 +151,52 @@ def get_user_owner():
     return None
 
 
-def get_visible_transactions_query(start_date=None, end_date=None, status_filter=None, 
+def _clean_int_list(values):
+    """把任意形式的取值（None/标量/列表）规整为去重后的 int 列表"""
+    if not values:
+        return []
+    if not isinstance(values, (list, tuple)):
+        values = [values]
+    out = []
+    for v in values:
+        if v is None or v == '':
+            continue
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            continue
+        if n not in out:
+            out.append(n)
+    return out
+
+
+def _as_value_list(v):
+    """把 None / 标量 / 列表规整为去空列表"""
+    if not v:
+        return []
+    if isinstance(v, (list, tuple)):
+        return [x for x in v if x not in (None, '')]
+    return [v]
+
+
+def _session_value_list(name):
+    """读取 session 中的多选值，兼容旧版存单值/字符串的 session"""
+    return _as_value_list(session.get(name))
+
+
+def _raw_filter_values(name):
+    """合并 request.args / request.form 中的同名多选值（过滤空串）"""
+    vals = request.args.getlist(name)
+    if not vals:
+        vals = request.form.getlist(name)
+    return [v for v in vals if v != ''] if vals else []
+
+
+def get_visible_transactions_query(start_date=None, end_date=None, status_filter=None,
                                    category_id=None, account_id=None):
     """
     返回一个针对当前用户可见交易的 SELECT 语句。
+    status_filter / category_id / account_id 支持多选列表（空列表=不过滤）。
     调用方需通过 db.session.execute(stmt).scalars().all() 获取结果。
     """
     owner = get_user_owner()
@@ -124,33 +220,40 @@ def get_visible_transactions_query(start_date=None, end_date=None, status_filter
     if end_date:
         stmt = stmt.where(Transaction.trans_datetime <= end_date)
 
-    if status_filter:
-        stmt = stmt.where(Transaction.trans_status == TransactionStatus(status_filter))
+    valid_statuses = {s.value for s in TransactionStatus}
+    status_codes = [
+        c for c in _as_value_list(status_filter) if c in valid_statuses
+    ]
+    if status_codes:
+        stmt = stmt.where(
+            Transaction.trans_status.in_([TransactionStatus(c) for c in status_codes])
+        )
 
-    if category_id:
-        stmt = stmt.where(Transaction.trans_category_id == category_id)
+    category_ids = _clean_int_list(category_id)
+    if category_ids:
+        stmt = stmt.where(Transaction.trans_category_id.in_(category_ids))
 
-    if account_id:
-        stmt = stmt.where(Transaction.trans_account_id == account_id)
+    account_ids = _clean_int_list(account_id)
+    if account_ids:
+        stmt = stmt.where(Transaction.trans_account_id.in_(account_ids))
 
     return stmt.order_by(Transaction.trans_datetime.desc())
 
 
 def _get_filter_params():
-    """从 request.args 或 request.form 获取当前筛选参数"""
-    def get_param(key):
-        return request.args.get(key, request.form.get(key, ''))
-
-    return {
-        k: v for k, v in {
-            'start_date': get_param('start_date'),
-            'end_date': get_param('end_date'),
-            'status': get_param('status'),
-            'category_id': get_param('category_id'),
-            'account_id': get_param('account_id'),
-            'from_accounts': get_param('from_accounts'),
-        }.items() if v
-    }
+    """从 request.args 或 request.form 获取当前筛选参数（多选参数保持列表）"""
+    params = {}
+    for name in ('start_date', 'end_date'):
+        vals = _raw_filter_values(name)
+        if vals:
+            params[name] = vals[0]
+    for name in ('status', 'category_id', 'account_id'):
+        vals = _raw_filter_values(name)
+        if vals:
+            params[name] = vals
+    if _raw_filter_values('from_accounts'):
+        params['from_accounts'] = '1'
+    return params
 
 
 def _dashboard_redirect(**extra):
@@ -174,26 +277,40 @@ def dashboard():
     start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     end_of_month = (start_of_month + timedelta(days=32)).replace(day=1) - timedelta(seconds=1)
     
-    start_date = request.args.get('start_date', '') or session.get('dash_start_date', start_of_month.strftime('%Y-%m-%d'))
-    end_date = request.args.get('end_date', '') or session.get('dash_end_date', end_of_month.strftime('%Y-%m-%d'))
-    status_filter = request.args.get('status', '') or session.get('dash_status', '')
-    category_id = request.args.get('category_id', type=int) or session.get('dash_category_id')
-    _request_account_id = request.args.get('account_id', type=int)
-    if _request_account_id is not None:
-        account_id = _request_account_id
-    elif any(request.args.get(k) for k in ('start_date', 'end_date', 'status', 'category_id')):
-        account_id = None
+    # 筛选参数解析：区分「URL 显式传入（空值 = 清除）」与「参数缺失（跨页跳转时沿用 session 记忆）」。
+    # 状态/分类/账户支持多选：URL 中同名参数重复即多值（category_id=1&category_id=2…）。
+    if 'start_date' in request.args:
+        start_date = request.args.get('start_date') or start_of_month.strftime('%Y-%m-%d')
     else:
-        account_id = session.get('dash_account_id')
+        start_date = session.get('dash_start_date', start_of_month.strftime('%Y-%m-%d'))
+    if 'end_date' in request.args:
+        end_date = request.args.get('end_date') or end_of_month.strftime('%Y-%m-%d')
+    else:
+        end_date = session.get('dash_end_date', end_of_month.strftime('%Y-%m-%d'))
+    if 'status' in request.args:
+        status_filter = _raw_filter_values('status')
+    else:
+        status_filter = _session_value_list('dash_status')
+    if 'category_id' in request.args:
+        category_ids = _clean_int_list(request.args.getlist('category_id'))
+    else:
+        category_ids = _clean_int_list(_session_value_list('dash_category_ids')) or _clean_int_list(session.get('dash_category_id'))
+    if 'account_id' in request.args:
+        account_ids = _clean_int_list(request.args.getlist('account_id'))
+    elif any(_raw_filter_values(k) for k in ('start_date', 'end_date', 'status', 'category_id')):
+        # 带了其他筛选参数但未显式传账户：清除账户筛选（如从账户详情/概览导航回仪表盘）
+        account_ids = []
+    else:
+        account_ids = _clean_int_list(_session_value_list('dash_account_ids')) or _clean_int_list(session.get('dash_account_id'))
     from_accounts = request.args.get('from_accounts', '')
-    active_tab = request.args.get('tab', 'add-tab')
+    active_tab = request.args.get('tab', 'list-tab')
 
     # Persist filters to session for cross-page navigation
     session['dash_start_date'] = start_date
     session['dash_end_date'] = end_date
     session['dash_status'] = status_filter
-    session['dash_category_id'] = category_id
-    session['dash_account_id'] = account_id
+    session['dash_category_ids'] = category_ids
+    session['dash_account_ids'] = account_ids
     
     try:
         start = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
@@ -204,32 +321,56 @@ def dashboard():
     
     # 执行查询
     stmt = get_visible_transactions_query(
-        start, end, status_filter, category_id, account_id
+        start, end, status_filter, category_ids, account_ids
     )
     stmt = stmt.options(selectinload(Transaction.counter_transaction))
     transactions_list = db.session.execute(stmt).scalars().all()
     
-    total_income = sum(t.trans_amount for t in transactions_list if t.is_income())
-    total_expense = sum(abs(t.trans_amount) for t in transactions_list if t.is_expense())
-    total_transfer = sum(abs(t.trans_amount) for t in transactions_list if t.is_transfer())
+    # 外币交易统一按“交易当日”汇率折算为 HKD 后再进入统计（每日小计与顶部卡片共用同口径）
+    rate_cache = {}
+    _acct_ids = {t.trans_account_id for t in transactions_list}
+    account_currencies = dict(
+        db.session.execute(
+            select(Account.account_id, Account.account_currency_name).where(
+                Account.account_id.in_(_acct_ids)
+            )
+        ).all()
+    ) if _acct_ids else {}
+    hkd_values = [
+        _transaction_hkd_value(t, rate_cache, account_currencies)
+        for t in transactions_list
+    ]
+
+    total_income = sum(
+        v for t, v in zip(transactions_list, hkd_values) if t.is_income()
+    )
+    total_expense = sum(
+        abs(v) for t, v in zip(transactions_list, hkd_values) if t.is_expense()
+    )
+    total_transfer = sum(
+        abs(v) for t, v in zip(transactions_list, hkd_values) if t.is_transfer()
+    )
     unverified_count = sum(1 for t in transactions_list if t.trans_status == TransactionStatus.UNVERIFIED)
     
     # 按天分组
     daily_groups = {}
-    for t in transactions_list:
+    for t, hkd in zip(transactions_list, hkd_values):
         day_key = t.trans_datetime.strftime('%Y-%m-%d')
         if day_key not in daily_groups:
             daily_groups[day_key] = {
                 'date': t.trans_datetime,
                 'transactions': [],
                 'income': 0.0,
-                'expense': 0.0
+                'expense': 0.0,
+                'net': 0.0
             }
         daily_groups[day_key]['transactions'].append(t)
+        # net = 当日净变动：该日所有符合筛选交易折算 HKD 后的金额代数和（收入-支出+转入-转出，含特殊交易）
+        daily_groups[day_key]['net'] += hkd
         if t.is_income():
-            daily_groups[day_key]['income'] += t.trans_amount
+            daily_groups[day_key]['income'] += hkd
         elif t.is_expense():
-            daily_groups[day_key]['expense'] += abs(t.trans_amount)
+            daily_groups[day_key]['expense'] += abs(hkd)
     
     daily_sorted = sorted(daily_groups.values(), key=lambda x: x['date'], reverse=True)
     
@@ -288,8 +429,8 @@ def dashboard():
         start_date=start_date,
         end_date=end_date,
         status_filter=status_filter,
-        category_filter=category_id or '',
-        account_filter=account_id or '',
+        category_filter=category_ids,
+        account_filter=account_ids,
         from_accounts=from_accounts,
         active_tab=active_tab,
         deposit_flow=deposit_flow,

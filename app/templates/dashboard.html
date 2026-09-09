@@ -3,9 +3,9 @@
 {% macro filter_hidden() %}
 <input type="hidden" name="start_date" value="{{ start_date }}">
 <input type="hidden" name="end_date" value="{{ end_date }}">
-<input type="hidden" name="status" value="{{ status_filter }}">
-<input type="hidden" name="category_id" value="{{ category_filter }}">
-<input type="hidden" name="account_id" value="{{ account_filter }}">
+{% for s in status_filter %}<input type="hidden" name="status" value="{{ s }}">{% endfor %}
+{% for c in category_filter %}<input type="hidden" name="category_id" value="{{ c }}">{% endfor %}
+{% for a in account_filter %}<input type="hidden" name="account_id" value="{{ a }}">{% endfor %}
 {% if from_accounts == '1' %}<input type="hidden" name="from_accounts" value="1">{% endif %}
 {% endmacro %}
 
@@ -69,39 +69,60 @@
             </div>
             <div class="form-group" style="margin-bottom: 0;">
                 <label>状态</label>
-                <select name="status">
-                    <option value="">全部</option>
-                    <option value="UNVERIFIED" {{ 'selected' if status_filter == 'UNVERIFIED' }}>未核对</option>
-                    <option value="VERIFIED" {{ 'selected' if status_filter == 'VERIFIED' }}>已核对</option>
-                    <option value="FLAGGED" {{ 'selected' if status_filter == 'FLAGGED' }}>有疑问</option>
-                    <option value="RECONCILED" {{ 'selected' if status_filter == 'RECONCILED' }}>已对账</option>
-                </select>
+                <div class="msel">
+                    <button type="button" class="msel-btn" onclick="toggleMsFilter(this)">
+                        <span class="msel-title">状态</span>
+                        <span class="msel-summary">{% if status_filter %}{{ status_filter|length }} 项{% else %}全部{% endif %}</span>
+                        <span class="msel-caret">▾</span>
+                    </button>
+                    <div class="msel-panel">
+                        <div class="msel-head"><button type="button" class="msel-clear" onclick="clearMsFilter(this)">清除选择</button></div>
+                        <label class="msel-item"><input type="checkbox" name="status" value="UNVERIFIED" {{ 'checked' if 'UNVERIFIED' in status_filter }}> 未核对</label>
+                        <label class="msel-item"><input type="checkbox" name="status" value="VERIFIED" {{ 'checked' if 'VERIFIED' in status_filter }}> 已核对</label>
+                        <label class="msel-item"><input type="checkbox" name="status" value="FLAGGED" {{ 'checked' if 'FLAGGED' in status_filter }}> 有疑问</label>
+                        <label class="msel-item"><input type="checkbox" name="status" value="RECONCILED" {{ 'checked' if 'RECONCILED' in status_filter }}> 已对账</label>
+                    </div>
+                </div>
             </div>
             <div class="form-group" style="margin-bottom: 0;">
                 <label>分类</label>
-                <select name="category_id">
-                    <option value="">全部分类</option>
-                    {% for cat in categories %}
-                    <option value="{{ cat.category_id }}" {{ 'selected' if category_filter|string == cat.category_id|string }}>
-                        {{ cat.category_class }} › {{ cat.category_subclass or '-' }} › {{ cat.category_name }}
-                    </option>
-                    {% endfor %}
-                </select>
+                <div class="msel">
+                    <button type="button" class="msel-btn" onclick="toggleMsFilter(this)">
+                        <span class="msel-title">分类</span>
+                        <span class="msel-summary">{% if category_filter %}{{ category_filter|length }} 项{% else %}全部{% endif %}</span>
+                        <span class="msel-caret">▾</span>
+                    </button>
+                    <div class="msel-panel">
+                        <div class="msel-head"><button type="button" class="msel-clear" onclick="clearMsFilter(this)">清除选择</button></div>
+                        {% for cat in categories %}
+                        <label class="msel-item"><input type="checkbox" name="category_id" value="{{ cat.category_id }}" {{ 'checked' if cat.category_id in category_filter }}>
+                            {{ cat.category_class }} › {{ cat.category_subclass or '-' }} › {{ cat.category_name }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
             </div>
             <div class="form-group" style="margin-bottom: 0;">
                 <label>账户</label>
-                <select name="account_id">
-                    <option value="">全部账户</option>
-                    {% for acc in accounts %}
-                    <option value="{{ acc.account_id }}" {{ 'selected' if account_filter|string == acc.account_id|string }}>
-                        {{ acc.account_type.value }} · {{ acc.account_custodian }} · {{ acc.owner.owner_name }} · {{ acc.account_name }} ({{ acc.account_currency_name }})
-                    </option>
-                    {% endfor %}
-                </select>
+                <div class="msel">
+                    <button type="button" class="msel-btn" onclick="toggleMsFilter(this)">
+                        <span class="msel-title">账户</span>
+                        <span class="msel-summary">{% if account_filter %}{{ account_filter|length }} 项{% else %}全部{% endif %}</span>
+                        <span class="msel-caret">▾</span>
+                    </button>
+                    <div class="msel-panel">
+                        <div class="msel-head"><button type="button" class="msel-clear" onclick="clearMsFilter(this)">清除选择</button></div>
+                        {% for acc in accounts %}
+                        <label class="msel-item"><input type="checkbox" name="account_id" value="{{ acc.account_id }}" {{ 'checked' if acc.account_id in account_filter }}>
+                            {{ acc.account_type.value }} · {{ acc.account_custodian }} · {{ acc.owner.owner_name }} · {{ acc.account_name }} ({{ acc.account_currency_name }})
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
             </div>
             <div style="display: flex; gap: 8px; white-space: nowrap; align-self: end; padding-bottom: 1px;">
                 <button type="submit" class="btn" style="height: 40px; padding: 0 16px; flex-shrink: 0; background: #d5f5e3; color: #27ae60; border: none;">🔍 筛选</button>
-                <a href="{{ url_for('transactions.dashboard') }}" class="btn" style="height: 40px; padding: 0 16px; line-height: 40px; background: #fadbd8; color: #e74c3c; text-decoration: none; flex-shrink: 0;">✕ 清除</a>
+                <a href="{{ url_for('transactions.dashboard', start_date='', end_date='', status='', category_id='', account_id='', tab='list-tab') }}" class="btn" style="height: 40px; padding: 0 16px; line-height: 40px; background: #fadbd8; color: #e74c3c; text-decoration: none; flex-shrink: 0;">✕ 清除</a>
             </div>
         </div>
     </form>
@@ -133,15 +154,13 @@
     </div>
 </div>
 
-<!-- 标签页 -->
-<div class="tabs">
-    <div class="tab {{ 'active' if active_tab == 'add-tab' else '' }}" data-tab="add-tab" onclick="switchTab('add-tab')">➕ 添加交易</div>
-    <div class="tab {{ 'active' if active_tab == 'list-tab' else '' }}" data-tab="list-tab" onclick="switchTab('list-tab')">📋 交易列表</div>
-</div>
-
-<!-- 添加交易表单 -->
-<div id="add-tab" class="tab-content {{ 'active' if active_tab == 'add-tab' else '' }}">
-    <div class="card">
+<!-- 添加交易弹窗 -->
+<div id="add-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2004; justify-content: center; align-items: center;">
+    <div class="card" style="max-width: 620px; width: 94%; max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <h3 style="margin: 0;">➕ 添加交易</h3>
+            <button type="button" class="btn-action" style="background: transparent; color: #888; border: none; font-size: 20px; cursor: pointer; padding: 2px 6px;" onclick="closeAddModal()" title="关闭">✕</button>
+        </div>
         <form method="POST" action="{{ url_for('transactions.add_transaction') }}" id="transaction-form" onsubmit="return validateUnitForm()">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             
@@ -184,7 +203,7 @@
                 </div>
                 <div class="form-group" style="flex: 1;">
                     <label for="amount">金额 *</label>
-                    <input type="number" id="amount" name="amount" step="0.01" min="0.01" placeholder="0.00" required onchange="onAmountChange()">
+                    <input type="number" id="amount" name="amount" step="0.01" min="0.01" placeholder="0.00" required onchange="onAmountChange()" data-calc="1">
                 </div>
             </div>
             
@@ -215,14 +234,14 @@
                 </div>
                 <div class="form-group" style="flex: 1;">
                     <label for="to_amount">金额 *</label>
-                    <input type="number" id="to_amount" name="to_amount" step="0.01" min="0.01" placeholder="0.00">
+                    <input type="number" id="to_amount" name="to_amount" step="0.01" min="0.01" placeholder="0.00" data-calc="1">
                 </div>
             </div>
             
             <div class="form-row" id="fx-rate-group" style="display: none;">
                 <div class="form-group" style="flex: 1; max-width: 160px;">
                     <label for="fx_rate">汇率 (1 HKD = ? <span id="fx-currency-label"></span>)</label>
-                    <input type="number" id="fx_rate" name="fx_rate" step="0.0001" min="0" value="0" placeholder="0=交易日汇率">
+                    <input type="number" id="fx_rate" name="fx_rate" step="0.0001" min="0" value="0" placeholder="0=交易日汇率" data-calc="1">
                 </div>
                 <div class="form-group" style="display: flex; align-items: flex-end; padding-bottom: 4px; gap: 8px;">
                     <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap;">
@@ -237,11 +256,11 @@
             <div class="form-row" id="unit-group" style="display: none;">
                 <div class="form-group" style="flex: 1;">
                     <label for="unit">单位 <span style="font-weight: normal; color: #999;">(可选)</span></label>
-                    <input type="number" id="unit" name="unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="onUnitChange()">
+                    <input type="number" id="unit" name="unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="onUnitChange()" data-calc="1">
                 </div>
                 <div class="form-group" style="flex: 1;">
                     <label for="unit_price">单位单价 <span style="font-weight: normal; color: #999;">(可选)</span></label>
-                    <input type="number" id="unit_price" name="unit_price" step="0.000001" min="0" placeholder="每单位 HKD 价格" oninput="onUnitPriceChange()">
+                    <input type="number" id="unit_price" name="unit_price" step="0.000001" min="0" placeholder="每单位 HKD 价格" oninput="onUnitPriceChange()" data-calc="1">
                 </div>
             </div>
             
@@ -278,14 +297,21 @@
                 </div>
             </div>
             
-            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">✓ 添加交易</button>
+            <div style="display: flex; gap: 8px; margin-top: 4px;">
+                <button type="submit" class="btn btn-primary" style="flex: 1; padding: 12px;">✓ 添加交易</button>
+                <button type="button" class="btn btn-secondary" style="flex: 1; padding: 12px;" onclick="closeAddModal()">取消</button>
+            </div>
         </form>
     </div>
 </div>
 
 <!-- 交易列表 -->
-<div id="list-tab" class="tab-content {{ 'active' if active_tab == 'list-tab' else '' }}">
+<div id="list-tab" class="tab-content active">
     <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="margin: 0;">📋 交易列表</h3>
+            <button type="button" class="btn btn-primary" style="white-space: nowrap;" onclick="openAddModal()">➕ 添加交易</button>
+        </div>
         {% if daily_sorted %}
         <form id="batch-form" method="POST" action="{{ url_for('transactions.batch_verify') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -315,13 +341,20 @@
                     {% for day in daily_sorted %}
                     <tr style="background: #f0f2f5;">
                         <td colspan="9" style="padding: 8px 12px; font-size: 13px; font-weight: 600;">
-                            <span>{{ day['date'].strftime('%Y-%m-%d') }} ({{ day['transactions']|length }} 笔)</span>
-                            {% if day['income'] > 0 %}
-                            <span class="text-income" style="margin-left: 16px;">📥 收入: ${{ day['income']|amt }}</span>
-                            {% endif %}
-                            {% if day['expense'] > 0 %}
-                            <span class="text-expense" style="margin-left: 16px;">📤 支出: ${{ day['expense']|amt }}</span>
-                            {% endif %}
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                                <div>
+                                    <span>{{ day['date'].strftime('%Y-%m-%d') }} ({{ day['transactions']|length }} 笔)</span>
+                                    {% if day['income'] > 0 %}
+                                    <span class="text-income" style="margin-left: 16px;">📥 收入: ${{ day['income']|amt }}</span>
+                                    {% endif %}
+                                    {% if day['expense'] > 0 %}
+                                    <span class="text-expense" style="margin-left: 16px;">📤 支出: ${{ day['expense']|amt }}</span>
+                                    {% endif %}
+                                    <span style="margin-left: 16px; font-weight: 700; color: {{ '#27ae60' if day['net'] >= 0 else '#e74c3c' }};">💰 总结余: ${{ day['net']|amt }}</span>
+                                </div>
+                                <button type="button" class="btn-action" style="background: #d5f5e3; color: #27ae60; white-space: nowrap;"
+                                        onclick="openAddModal('{{ day['date'].strftime('%Y-%m-%d') }}')" title="添加该日交易">＋</button>
+                            </div>
                         </td>
                     </tr>
                     {% for t in day['transactions'] %}
@@ -477,8 +510,8 @@
                 
                 <div class="form-row">
                     <div class="form-group" style="flex: 1;">
-                        <label>金额 *</label>
-                        <input type="number" id="edit_amount" name="amount" step="0.01" min="0.01" required oninput="editAmountChange()">
+                    <label>金额 *</label>
+                    <input type="number" id="edit_amount" name="amount" step="0.01" min="0.01" required oninput="editAmountChange()" data-calc="1">
                     </div>
                     <div class="form-group" style="flex: 1; max-width: 110px;">
                         <label>货币</label>
@@ -491,11 +524,11 @@
                 <div class="form-row" id="edit-unit-group" style="display: none;">
                     <div class="form-group" style="flex: 1;">
                         <label for="edit_unit">单位 <span style="font-weight: normal; color: #999;">(可选)</span></label>
-                        <input type="number" id="edit_unit" name="unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="editUnitChange()">
+                        <input type="number" id="edit_unit" name="unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="editUnitChange()" data-calc="1">
                     </div>
                     <div class="form-group" style="flex: 1;">
                         <label for="edit_unit_price">单位单价 <span style="font-weight: normal; color: #999;">(可选)</span></label>
-                        <input type="number" id="edit_unit_price" name="unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="editUnitPriceChange()">
+                        <input type="number" id="edit_unit_price" name="unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="editUnitPriceChange()" data-calc="1">
                     </div>
                 </div>
             </div>
@@ -518,7 +551,7 @@
                     <div class="form-row">
                         <div class="form-group" style="flex: 1;">
                             <label>金额 *</label>
-                            <input type="number" id="edit_out_amount" name="out_amount" step="0.01" min="0.01" required oninput="sideAmountChange('out')">
+                            <input type="number" id="edit_out_amount" name="out_amount" step="0.01" min="0.01" required oninput="sideAmountChange('out')" data-calc="1">
                         </div>
                         <div class="form-group" style="flex: 1; max-width: 110px;">
                             <label>货币</label>
@@ -530,11 +563,11 @@
                     <div class="form-row" id="edit-out-unit-group" style="display: none;">
                         <div class="form-group" style="flex: 1;">
                             <label for="edit_out_unit">单位 <span style="font-weight: normal; color: #999;">(可选)</span></label>
-                            <input type="number" id="edit_out_unit" name="out_unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="sideUnitChange('out')">
+                            <input type="number" id="edit_out_unit" name="out_unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="sideUnitChange('out')" data-calc="1">
                         </div>
                         <div class="form-group" style="flex: 1;">
                             <label for="edit_out_unit_price">单位单价 <span style="font-weight: normal; color: #999;">(可选)</span></label>
-                            <input type="number" id="edit_out_unit_price" name="out_unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="sideUnitChange('out')">
+                            <input type="number" id="edit_out_unit_price" name="out_unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="sideUnitChange('out')" data-calc="1">
                         </div>
                     </div>
                 </div>
@@ -554,7 +587,7 @@
                     <div class="form-row">
                         <div class="form-group" style="flex: 1;">
                             <label>金额 *</label>
-                            <input type="number" id="edit_in_amount" name="in_amount" step="0.01" min="0.01" required oninput="sideAmountChange('in')">
+                            <input type="number" id="edit_in_amount" name="in_amount" step="0.01" min="0.01" required oninput="sideAmountChange('in')" data-calc="1">
                         </div>
                         <div class="form-group" style="flex: 1; max-width: 110px;">
                             <label>货币</label>
@@ -566,11 +599,11 @@
                     <div class="form-row" id="edit-in-unit-group" style="display: none;">
                         <div class="form-group" style="flex: 1;">
                             <label for="edit_in_unit">单位 <span style="font-weight: normal; color: #999;">(可选)</span></label>
-                            <input type="number" id="edit_in_unit" name="in_unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="sideUnitChange('in')">
+                            <input type="number" id="edit_in_unit" name="in_unit" step="0.000001" min="0.000001" placeholder="单位数量" oninput="sideUnitChange('in')" data-calc="1">
                         </div>
                         <div class="form-group" style="flex: 1;">
                             <label for="edit_in_unit_price">单位单价 <span style="font-weight: normal; color: #999;">(可选)</span></label>
-                            <input type="number" id="edit_in_unit_price" name="in_unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="sideUnitChange('in')">
+                            <input type="number" id="edit_in_unit_price" name="in_unit_price" step="0.000001" min="0" placeholder="每单位价格" oninput="sideUnitChange('in')" data-calc="1">
                         </div>
                     </div>
                 </div>
@@ -748,6 +781,39 @@
     </div>
 </div>
 
+<!-- 计算器浮窗 -->
+<div id="calc-popup" role="dialog" aria-label="计算器">
+    <div class="calc-head">
+        <span>🧮 计算器</span>
+        <button type="button" class="calc-act" data-calc-key="C" title="清除全部">C</button>
+        <button type="button" class="calc-act" data-calc-key="backspace" title="退格">⌫</button>
+        <button type="button" id="calc-close" title="关闭">✕</button>
+    </div>
+    <div class="calc-display">
+        <div id="calc-expr"></div>
+        <div id="calc-result">0</div>
+    </div>
+    <div id="calc-keys">
+        <button type="button" class="calc-btn calc-num" data-calc-key="7">7</button>
+        <button type="button" class="calc-btn calc-num" data-calc-key="8">8</button>
+        <button type="button" class="calc-btn calc-num" data-calc-key="9">9</button>
+        <button type="button" class="calc-btn calc-op" data-calc-key="/">÷</button>
+        <button type="button" class="calc-btn calc-num" data-calc-key="4">4</button>
+        <button type="button" class="calc-btn calc-num" data-calc-key="5">5</button>
+        <button type="button" class="calc-btn calc-num" data-calc-key="6">6</button>
+        <button type="button" class="calc-btn calc-op" data-calc-key="*">×</button>
+        <button type="button" class="calc-btn calc-num" data-calc-key="1">1</button>
+        <button type="button" class="calc-btn calc-num" data-calc-key="2">2</button>
+        <button type="button" class="calc-btn calc-num" data-calc-key="3">3</button>
+        <button type="button" class="calc-btn calc-op" data-calc-key="-">−</button>
+        <button type="button" class="calc-btn calc-num" data-calc-key="0">0</button>
+        <button type="button" class="calc-btn calc-num" data-calc-key=".">.</button>
+        <button type="button" class="calc-btn calc-op" data-calc-key="+">+</button>
+        <button type="button" class="calc-btn calc-eq" data-calc-key="=">=</button>
+    </div>
+    <button type="button" class="calc-btn calc-apply" id="calc-apply">✓ 填入</button>
+</div>
+
 <style>
     .btn-action {
         display: inline-block;
@@ -761,11 +827,272 @@
         transition: all 0.15s;
     }
     .btn-action:hover { filter: brightness(0.9); }
+
+    /* 多选筛选下拉（状态/分类/账户） */
+    .msel { position: relative; }
+    .msel-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        height: 41px;
+        padding: 0 12px;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 14px;
+        color: #333;
+        cursor: pointer;
+        font-family: inherit;
+        transition: border-color 0.2s;
+        text-align: left;
+    }
+    .msel-btn:hover { border-color: #aaa; }
+    .msel-title { color: #777; font-weight: 500; white-space: nowrap; }
+    .msel-summary { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .msel-caret { color: #999; }
+    .msel-panel {
+        display: none;
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        z-index: 1200;
+        min-width: 260px;
+        max-height: 300px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #d5d9de;
+        border-radius: 8px;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+        padding: 6px;
+    }
+    .msel-panel.open { display: block; }
+    .msel-head { padding: 4px 6px 8px; border-bottom: 1px solid #f0f0f0; margin-bottom: 4px; }
+    .msel-clear {
+        border: none;
+        background: transparent;
+        color: #888;
+        font-size: 12px;
+        cursor: pointer;
+        padding: 0;
+        font-family: inherit;
+    }
+    .msel-clear:hover { color: #e94560; }
+    .msel-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        line-height: 1.4;
+        color: #333;
+    }
+    .msel-item:hover { background: #f4f6f8; }
+    .msel-item input[type="checkbox"] { width: auto; flex: none; margin: 2px 0 0; padding: 0; border: none; }
+
+    /* 数值栏位右侧的“计算器”开关按钮 */
+    .calc-wrap { display: flex; align-items: center; gap: 6px; }
+    .calc-wrap input[data-calc] { flex: 1 1 auto; min-width: 0; }
+    .calc-toggle {
+        flex: 0 0 auto;
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background: #f8f9fb;
+        color: #555;
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+        font-family: inherit;
+        transition: border-color 0.15s, background 0.15s;
+    }
+    .calc-toggle:hover { border-color: #16213e; background: #eef0f4; color: #16213e; }
+    .calc-toggle:focus { outline: none; }
+
+    /* 金额/汇率/单位等数值栏位的计算器浮窗 */
+    #calc-popup {
+        display: none;
+        position: fixed;
+        z-index: 2100;
+        width: 264px;
+        background: #fff;
+        border: 1px solid #d5d9de;
+        border-radius: 10px;
+        box-shadow: 0 6px 24px rgba(0,0,0,.16);
+        padding: 12px;
+        font-family: inherit;
+    }
+    #calc-popup .calc-btn {
+        border: none;
+        border-radius: 6px;
+        background: #eef1f5;
+        color: #1a1a2e;
+        font-size: 16px;
+        padding: 9px 0;
+        cursor: pointer;
+        transition: filter .12s;
+        font-family: inherit;
+    }
+    #calc-popup .calc-btn:hover { filter: brightness(.94); }
+    #calc-popup .calc-btn.calc-op {
+        background: #dbe7f6;
+        color: #1a5276;
+    }
+    #calc-popup .calc-btn.calc-act {
+        background: #fdeaea;
+        color: #a93226;
+        font-size: 13px;
+    }
+    #calc-popup .calc-btn.calc-eq {
+        background: #27ae60;
+        color: #fff;
+    }
+    #calc-keys {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+    }
+    #calc-keys .span2 { grid-column: span 2; }
+    #calc-popup .calc-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #1a1a2e;
+        font-size: 14px;
+    }
+    #calc-popup .calc-head > span { flex: 1; }
+    #calc-popup .calc-head .calc-act {
+        padding: 4px 8px;
+        font-size: 13px;
+        border: none;
+        border-radius: 6px;
+        background: #fdeaea;
+        color: #a93226;
+        cursor: pointer;
+        font-family: inherit;
+    }
+    #calc-popup .calc-head .calc-act:hover { filter: brightness(.94); }
+    #calc-popup #calc-close {
+        border: none;
+        background: transparent;
+        color: #999;
+        font-size: 16px;
+        cursor: pointer;
+        line-height: 1;
+        padding: 2px 4px;
+    }
+    #calc-popup #calc-close:hover { color: #333; }
+    #calc-popup .calc-display {
+        background: #f8f9fb;
+        border: 1px solid #eceff3;
+        border-radius: 8px;
+        padding: 6px 10px;
+        margin-bottom: 8px;
+        text-align: right;
+        min-height: 60px;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        word-break: break-all;
+    }
+    #calc-popup .calc-display #calc-expr {
+        font-size: 12px;
+        color: #8b949e;
+        min-height: 16px;
+        white-space: pre-wrap;
+    }
+    #calc-popup .calc-display #calc-result {
+        font-size: 22px;
+        font-weight: 700;
+        color: #1a1a2e;
+        line-height: 1.25;
+    }
+    #calc-popup .calc-apply {
+        width: 100%;
+        margin-top: 8px;
+        background: #16213e;
+        color: #fff;
+        font-size: 15px;
+        padding: 10px 0;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-family: inherit;
+    }
+    #calc-popup .calc-apply:hover { filter: brightness(1.15); }
 </style>
 
 <script>
     var currentDetailTransId = null;
     var editData = null;
+
+    var appliedFilters = {
+        start_date: {{ start_date|tojson }},
+        end_date: {{ end_date|tojson }},
+        status: {{ status_filter|tojson }},
+        category_id: {{ category_filter|tojson }},
+        account_id: {{ account_filter|tojson }}
+    };
+
+    function msPanelOf(el) {
+        if (!el || !el.closest) return null;
+        var root = el.closest('.msel');
+        return root ? root.querySelector('.msel-panel') : null;
+    }
+
+    function closeMsFilters() {
+        document.querySelectorAll('.msel-panel.open').forEach(function(p) { p.classList.remove('open'); });
+    }
+
+    function toggleMsFilter(btn) {
+        var panel = msPanelOf(btn);
+        if (!panel) return;
+        var willOpen = !panel.classList.contains('open');
+        closeMsFilters();
+        if (willOpen) panel.classList.add('open');
+    }
+
+    function clearMsFilter(clearBtn) {
+        var panel = msPanelOf(clearBtn);
+        if (!panel) return;
+        panel.querySelectorAll('input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+        updateMsSummary(panel);
+    }
+
+    function updateMsSummary(panel) {
+        var root = panel.closest ? panel.closest('.msel') : null;
+        if (!root) return;
+        var count = panel.querySelectorAll('input[type="checkbox"]:checked').length;
+        var summary = root.querySelector('.msel-summary');
+        if (summary) summary.textContent = count ? count + ' 项' : '全部';
+    }
+
+    document.addEventListener('click', function(e) {
+        if (!(e.target && e.target.closest && e.target.closest('.msel'))) {
+            closeMsFilters();
+        }
+    });
+
+    document.addEventListener('change', function(e) {
+        if (e.target && e.target.matches && e.target.matches('.msel-panel input[type="checkbox"]')) {
+            var panel = msPanelOf(e.target);
+            if (panel) updateMsSummary(panel);
+        }
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeMsFilters();
+    });
+    function todayStr() {
+        const now = new Date();
+        return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    }
     
     function onTypeChange() {
         const transType = document.getElementById('trans_type').value;
@@ -1012,17 +1339,6 @@
         return true;
     }
     
-    function switchTab(tabName) {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        document.querySelector(`.tab[data-tab="${tabName}"]`).classList.add('active');
-        document.getElementById(tabName).classList.add('active');
-        
-        const url = new URL(window.location);
-        url.searchParams.set('tab', tabName);
-        window.history.replaceState({}, '', url);
-    }
-    
     function toggleSelectAll() {
         const selectAll = document.getElementById('select-all');
         const checkboxes = document.querySelectorAll('.trans-checkbox');
@@ -1057,6 +1373,77 @@
         var n = Number(v || 0);
         if (!n) return '0';
         return n.toLocaleString('en-US', {maximumFractionDigits: 6});
+    }
+
+    function resetAddForm() {
+        document.getElementById('trans_type').value = 'expense';
+        document.getElementById('account_id').value = '';
+        document.getElementById('to_account_id').value = '';
+        document.getElementById('currency').value = 'HKD';
+        document.getElementById('to_currency').value = 'HKD';
+        document.getElementById('amount').value = '';
+        document.getElementById('to_amount').value = '';
+        document.getElementById('unit').value = '';
+        document.getElementById('unit_price').value = '';
+        document.getElementById('category_id').value = '';
+        document.getElementById('fx_rate').value = '0';
+        document.getElementById('fx_auto').checked = false;
+        document.getElementById('description').value = '';
+        document.getElementById('trans_time').value = '00:00';
+        onTypeChange();
+        onAccountChange();
+    }
+
+    function openAddModal(dateStr) {
+        closeCalc();
+        resetAddForm();
+
+        // 多选筛选：仅当恰好选中一个分类/账户时才预填（多个或“全部”时保持空）
+        var cats = appliedFilters.category_id || [];
+        var accs = appliedFilters.account_id || [];
+        var catId = cats.length === 1 ? String(cats[0]) : '';
+        var accId = accs.length === 1 ? String(accs[0]) : '';
+
+        var type = 'expense';
+        if (catId) {
+            var catSel = document.getElementById('category_id');
+            var catOpt = catSel.querySelector('option[value="' + catId + '"]');
+            if (catOpt) {
+                var t = catOpt.getAttribute('data-type');
+                if (t === 'I') type = 'income';
+                else if (t === 'E') type = 'expense';
+                else if (t === 'T') type = 'transfer';
+                else if (t === 'S') type = 'special';
+            }
+        }
+        document.getElementById('trans_type').value = type;
+
+        if (accId && type !== 'transfer') {
+            var accSel = document.getElementById('account_id');
+            if (accSel.querySelector('option[value="' + accId + '"]')) {
+                accSel.value = accId;
+            }
+        }
+
+        onTypeChange();
+        onAccountChange();
+
+        if (catId) {
+            var catSel2 = document.getElementById('category_id');
+            if (catSel2.querySelector('option[value="' + catId + '"]')) {
+                catSel2.value = catId;
+            }
+        }
+
+        var dateVal = dateStr || (appliedFilters.start_date || todayStr());
+        document.getElementById('trans_date').value = dateVal;
+
+        document.getElementById('add-modal').style.display = 'flex';
+    }
+
+    function closeAddModal() {
+        closeCalc();
+        document.getElementById('add-modal').style.display = 'none';
     }
 
     function openDetailModal(data) {
@@ -1136,8 +1523,21 @@
         currentDetailTransId = null;
     }
 
+    function setEditBlockRequired(singleVisible) {
+        // 只对当前可见分区的字段启用 required，避免隐藏的 required 字段阻止表单提交
+        var single = ['edit_account_id', 'edit_amount'];
+        var transfer = ['edit_out_account_id', 'edit_out_amount', 'edit_in_account_id', 'edit_in_amount'];
+        for (var i = 0; i < single.length; i++) {
+            document.getElementById(single[i]).required = singleVisible;
+        }
+        for (var j = 0; j < transfer.length; j++) {
+            document.getElementById(transfer[j]).required = !singleVisible;
+        }
+    }
+
     function openEditModal() {
         if (!editData) return;
+        closeCalc();
 
         var editForm = document.getElementById('edit-form');
         var currentParams = new URLSearchParams(window.location.search);
@@ -1156,6 +1556,7 @@
             // 转账：同时显示转出 + 转入两侧
             document.getElementById('edit-single-block').style.display = 'none';
             document.getElementById('edit-transfer-block').style.display = '';
+            setEditBlockRequired(false);
 
             document.getElementById('edit_out_account_id').value = editData.out.accountId;
             document.getElementById('edit_out_amount').value = editData.out.amount;
@@ -1174,6 +1575,7 @@
             // 非转账：单一账户
             document.getElementById('edit-single-block').style.display = '';
             document.getElementById('edit-transfer-block').style.display = 'none';
+            setEditBlockRequired(true);
 
             document.getElementById('edit_account_id').value = editData.accountId;
             document.getElementById('edit_amount').value = editData.amount;
@@ -1264,6 +1666,7 @@
     }
 
     function closeEditModal() {
+        closeCalc();
         document.getElementById('edit-modal').style.display = 'none';
     }
 
@@ -1317,7 +1720,243 @@
         }
     }
 
+    // ===== 数值栏位计算器（金额/汇率/单位/单位单价等 data-calc 输入框） =====
+    var calcPopup = document.getElementById('calc-popup');
+    var calcExprEl = document.getElementById('calc-expr');
+    var calcResultEl = document.getElementById('calc-result');
+    var calcTarget = null;
+    var calcExpr = '';
+    var calcGuard = false;
+    var calcAfterEq = false;
+
+    function calcIsVisible(el) {
+        if (!el || el.disabled || el.readOnly || el.type === 'hidden') return false;
+        var r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+    }
+
+    function calcStepDec() {
+        if (!calcTarget) return 6;
+        var st = calcTarget.getAttribute('step') || '';
+        if (st === '' || st === 'any') return 6;
+        var i = st.indexOf('.');
+        if (i === -1) return 6;
+        var d = st.length - i - 1;
+        return d > 0 ? d : 6;
+    }
+
+    function calcEval(s) {
+        s = String(s || '').replace(/[+\-*/]+$/, '');
+        if (!s) return NaN;
+        var tokens = s.match(/\d*\.?\d+|[+\-*/]/g);
+        if (!tokens || tokens.length % 2 === 0) return NaN;
+        var vals = [parseFloat(tokens[0])];
+        for (var i = 1; i < tokens.length; i += 2) {
+            var op = tokens[i];
+            var n = parseFloat(tokens[i + 1]);
+            if (isNaN(n)) return NaN;
+            if (op === '*') vals[vals.length - 1] *= n;
+            else if (op === '/') vals[vals.length - 1] /= n;
+            else { vals.push(op); vals.push(n); }
+        }
+        var out = vals[0];
+        for (var j = 1; j < vals.length; j += 2) {
+            out = vals[j] === '+' ? out + vals[j + 1] : out - vals[j + 1];
+        }
+        return out;
+    }
+
+    function calcResultRaw() {
+        if (calcExpr === '') return NaN;
+        var v = calcEval(calcExpr);
+        return isFinite(v) ? v : NaN;
+    }
+
+    function calcRender() {
+        var pretty = calcExpr.replace(/\*/g, '×').replace(/\//g, '÷').replace(/-/g, '−');
+        calcExprEl.textContent = pretty;
+        var raw = calcResultRaw();
+        calcResultEl.textContent = isNaN(raw) ? '0' : String(parseFloat(raw.toPrecision(12)));
+    }
+
+    function calcWriteToField(raw) {
+        if (!calcTarget || isNaN(raw) || !isFinite(raw)) return null;
+        var dec = calcStepDec();
+        var p = Math.pow(10, dec);
+        var rounded = Math.round((raw + Number.EPSILON) * p) / p;
+        var s = String(rounded);
+        calcGuard = true;
+        calcTarget.value = s;
+        calcTarget.dispatchEvent(new Event('input', {bubbles: true}));
+        calcTarget.dispatchEvent(new Event('change', {bubbles: true}));
+        calcGuard = false;
+        return s;
+    }
+
+    function calcAppendNumber(ch) {
+        if (ch >= '0' && ch <= '9') {
+            if (calcExpr === '0') calcExpr = ch;
+            else calcExpr += ch;
+            return;
+        }
+        var seg = calcExpr.split(/[+\-*/]/).pop();
+        if (seg.indexOf('.') !== -1) return;
+        calcExpr += (seg === '' ? '0.' : '.');
+    }
+
+    function calcAppendOp(op) {
+        if (calcExpr === '') return;
+        var last = calcExpr.charAt(calcExpr.length - 1);
+        if ('+-*/'.indexOf(last) !== -1) {
+            calcExpr = calcExpr.slice(0, -1) + op;
+        } else if (last !== '.') {
+            calcExpr += op;
+        }
+    }
+
+    function calcDoEqual() {
+        if (!calcTarget || calcExpr === '') return;
+        var raw = calcEval(calcExpr);
+        var s = calcWriteToField(raw);
+        if (s !== null) {
+            calcExpr = s;
+            calcAfterEq = true;
+            calcRender();
+        }
+    }
+
+    function calcHandleKey(key) {
+        if (key === 'C') { calcExpr = ''; calcAfterEq = false; calcRender(); return; }
+        if (key === 'backspace') {
+            calcExpr = calcExpr.slice(0, -1);
+            calcAfterEq = false;
+            calcRender();
+            return;
+        }
+        if (key === '=') { calcDoEqual(); return; }
+        if ('+-*/'.indexOf(key) !== -1) { calcAfterEq = false; calcAppendOp(key); calcRender(); return; }
+        if ((key >= '0' && key <= '9') || key === '.') {
+            if (calcAfterEq) { calcExpr = ''; calcAfterEq = false; }
+            calcAppendNumber(key);
+            calcRender();
+            return;
+        }
+    }
+
+    function calcPosition() {
+        if (!calcTarget) return;
+        var rect = calcTarget.getBoundingClientRect();
+        var pw = calcPopup.offsetWidth || 264;
+        var ph = calcPopup.offsetHeight || 320;
+        var left = Math.min(rect.left, window.innerWidth - pw - 8);
+        if (left < 8) left = 8;
+        var top = rect.bottom + 6;
+        if (top + ph > window.innerHeight - 8) top = rect.top - ph - 6;
+        if (top < 8) top = 8;
+        calcPopup.style.left = left + 'px';
+        calcPopup.style.top = top + 'px';
+    }
+
+    function openCalc(el) {
+        if (!calcPopup || !calcIsVisible(el)) return;
+        if (calcTarget === el && calcPopup.style.display === 'block') {
+            calcPosition();
+            return;
+        }
+        calcTarget = el;
+        var v = el.value;
+        calcExpr = (v !== '' && !isNaN(parseFloat(v))) ? String(parseFloat(v)) : '';
+        calcAfterEq = calcExpr !== '';
+        calcRender();
+        calcPopup.style.display = 'block';
+        calcPosition();
+    }
+
+    function closeCalc() {
+        if (!calcPopup) return;
+        calcPopup.style.display = 'none';
+        calcTarget = null;
+        calcExpr = '';
+    }
+
+    function calcBind() {
+        if (!calcPopup) return;
+
+        calcPopup.addEventListener('mousedown', function(e) { e.preventDefault(); });
+        calcPopup.addEventListener('click', function(e) {
+            if (e.target.id === 'calc-close') { closeCalc(); return; }
+            if (e.target.id === 'calc-apply') { calcDoEqual(); closeCalc(); return; }
+            var btn = e.target.closest ? e.target.closest('[data-calc-key]') : null;
+            if (btn) calcHandleKey(btn.getAttribute('data-calc-key'));
+        });
+
+        // 计算器为显式打开：不自动跟随输入框焦点弹出，避免浮窗遮挡表单按钮
+        document.addEventListener('click', function(e) {
+            var btn = e.target.closest ? e.target.closest('.calc-toggle') : null;
+            if (btn) {
+                var input = btn.parentNode ? btn.parentNode.querySelector('input[data-calc]') : null;
+                if (input && calcIsVisible(input)) openCalc(input);
+                return;
+            }
+            if (calcPopup.style.display === 'block' && !calcPopup.contains(e.target)) {
+                closeCalc();
+            }
+        });
+
+        document.addEventListener('focusin', function(e) {
+            if (calcPopup.style.display === 'block' && !calcPopup.contains(e.target)) {
+                closeCalc();
+            }
+        });
+
+        document.addEventListener('input', function(e) {
+            if (calcGuard || !calcTarget || e.target !== calcTarget) return;
+            var v = calcTarget.value;
+            calcExpr = (v !== '' && !isNaN(parseFloat(v))) ? String(parseFloat(v)) : '';
+            calcAfterEq = false;
+            calcRender();
+        });
+
+        document.addEventListener('mousedown', function(e) {
+            if (!calcPopup || calcPopup.style.display === 'none') return;
+            if (calcPopup.contains(e.target)) return;
+            closeCalc();
+        }, true);
+
+        document.addEventListener('keydown', function(e) {
+            if (calcPopup && calcPopup.style.display !== 'none' && e.key === 'Escape') closeCalc();
+        });
+
+        window.addEventListener('resize', calcPosition);
+        document.addEventListener('scroll', calcPosition, true);
+    }
+
+    function calcDecorateFields() {
+        var inputs = document.querySelectorAll('input[data-calc]');
+        for (var i = 0; i < inputs.length; i++) {
+            var el = inputs[i];
+            if (el.parentNode && el.parentNode.classList.contains('calc-wrap')) continue;
+            var wrap = document.createElement('div');
+            wrap.className = 'calc-wrap';
+            el.parentNode.insertBefore(wrap, el);
+            wrap.appendChild(el);
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'calc-toggle';
+            btn.title = '🧮 计算器';
+            btn.setAttribute('aria-label', '打开计算器');
+            btn.textContent = '🧮';
+            wrap.appendChild(btn);
+        }
+    }
+
+    calcDecorateFields();
+    calcBind();
+
     window.onclick = function(event) {
+        if (event.target == document.getElementById('add-modal')) {
+            closeAddModal();
+        }
         if (event.target == document.getElementById('detail-modal')) {
             closeDetailModal();
         }
@@ -1334,12 +1973,6 @@
     
     document.addEventListener('DOMContentLoaded', function() {
         const urlParams = new URLSearchParams(window.location.search);
-        const tab = urlParams.get('tab');
-        if (tab === 'list-tab') {
-            switchTab('list-tab');
-        } else {
-            onTypeChange();
-        }
         const flow = urlParams.get('deposit_flow');
         if (flow === 'open') {
             openDepositOpenModal();
