@@ -77,6 +77,7 @@
                     </button>
                     <div class="msel-panel">
                         <div class="msel-head"><button type="button" class="msel-clear" onclick="clearMsFilter(this)">清除选择</button></div>
+                        <input type="hidden" name="status" value="">
                         <label class="msel-item"><input type="checkbox" name="status" value="UNVERIFIED" {{ 'checked' if 'UNVERIFIED' in status_filter }}> 未核对</label>
                         <label class="msel-item"><input type="checkbox" name="status" value="VERIFIED" {{ 'checked' if 'VERIFIED' in status_filter }}> 已核对</label>
                         <label class="msel-item"><input type="checkbox" name="status" value="FLAGGED" {{ 'checked' if 'FLAGGED' in status_filter }}> 有疑问</label>
@@ -94,6 +95,7 @@
                     </button>
                     <div class="msel-panel">
                         <div class="msel-head"><button type="button" class="msel-clear" onclick="clearMsFilter(this)">清除选择</button></div>
+                        <input type="hidden" name="category_id" value="">
                         {% for cat in categories %}
                         <label class="msel-item"><input type="checkbox" name="category_id" value="{{ cat.category_id }}" {{ 'checked' if cat.category_id in category_filter }}>
                             {{ cat.category_class }} › {{ cat.category_subclass or '-' }} › {{ cat.category_name }}
@@ -112,6 +114,7 @@
                     </button>
                     <div class="msel-panel">
                         <div class="msel-head"><button type="button" class="msel-clear" onclick="clearMsFilter(this)">清除选择</button></div>
+                        <input type="hidden" name="account_id" value="">
                         {% for acc in accounts %}
                         <label class="msel-item"><input type="checkbox" name="account_id" value="{{ acc.account_id }}" {{ 'checked' if acc.account_id in account_filter }}>
                             {{ acc.account_type.value }} · {{ acc.account_custodian }} · {{ acc.owner.owner_name }} · {{ acc.account_name }} ({{ acc.account_currency_name }})
@@ -1178,8 +1181,11 @@
             .then(function(response) { return response.json(); })
             .then(function(data) {
                 if (data.rate) {
-                    document.getElementById('fx_rate').value = (1 / data.rate).toFixed(6);
-                    document.getElementById('fx_rate').style.opacity = '1';
+                    var fxRateEl = document.getElementById('fx_rate');
+                    var dec = stepDecimals(fxRateEl);
+                    var p = Math.pow(10, dec);
+                    fxRateEl.value = (Math.round((1 / data.rate + Number.EPSILON) * p) / p).toFixed(dec);
+                    fxRateEl.style.opacity = '1';
                 }
             })
             .catch(function() {});
@@ -1735,14 +1741,18 @@
         return r.width > 0 && r.height > 0;
     }
 
-    function calcStepDec() {
-        if (!calcTarget) return 6;
-        var st = calcTarget.getAttribute('step') || '';
+    function stepDecimals(el) {
+        if (!el) return 6;
+        var st = el.getAttribute('step') || '';
         if (st === '' || st === 'any') return 6;
         var i = st.indexOf('.');
         if (i === -1) return 6;
         var d = st.length - i - 1;
         return d > 0 ? d : 6;
+    }
+
+    function calcStepDec() {
+        return stepDecimals(calcTarget);
     }
 
     function calcEval(s) {

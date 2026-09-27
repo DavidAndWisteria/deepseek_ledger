@@ -290,6 +290,19 @@ class TestTransactionRoutes:
         assert '分类A交易' in html2
         assert '分类B交易' in html2
 
+    def test_dashboard_multiselect_emits_empty_marker(self, logged_in_client):
+        """多选筛选表单须为每个多选组提交显式空值标记。
+
+        取消全部勾选后浏览器会省略该字段，服务端会把「参数缺失」误判为
+        需要从 session 复原旧筛选，导致清空后点击筛选又恢复之前的分类/状态。
+        """
+        resp = logged_in_client.get('/?tab=list-tab')
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert '<input type="hidden" name="status" value="">' in html
+        assert '<input type="hidden" name="category_id" value="">' in html
+        assert '<input type="hidden" name="account_id" value="">' in html
+
     def test_dashboard_account_filter_clear_reverts(self, logged_in_client, app, test_owner, test_account, test_category):
         """账户筛选改回"全部账户"时不应复原为上一次的账户（v0.3.12 回归测试）"""
         with app.app_context():
